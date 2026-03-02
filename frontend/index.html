@@ -1,0 +1,980 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StegoWave — Audio Steganography</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080c10;
+    --surface: #0d1117;
+    --surface2: #161b22;
+    --border: #21262d;
+    --accent: #00ff9d;
+    --accent2: #0099ff;
+    --accent3: #ff6b6b;
+    --text: #e6edf3;
+    --muted: #7d8590;
+    --font-display: 'Syne', sans-serif;
+    --font-mono: 'Space Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,157,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,157,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Glow orbs */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.15;
+  }
+  .orb-1 { width: 400px; height: 400px; background: var(--accent); top: -100px; right: -100px; animation: drift 8s ease-in-out infinite; }
+  .orb-2 { width: 300px; height: 300px; background: var(--accent2); bottom: -80px; left: -80px; animation: drift 10s ease-in-out infinite reverse; }
+
+  @keyframes drift {
+    0%, 100% { transform: translate(0,0); }
+    50% { transform: translate(30px, 20px); }
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 20px;
+  }
+
+  /* Header */
+  header {
+    text-align: center;
+    margin-bottom: 60px;
+  }
+
+  .logo-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, rgba(0,255,157,0.1), rgba(0,153,255,0.1));
+    border: 1px solid rgba(0,255,157,0.3);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(36px, 6vw, 72px);
+    font-weight: 800;
+    line-height: 1;
+    background: linear-gradient(135deg, #fff 40%, var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 16px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 13px;
+    letter-spacing: 1px;
+    line-height: 1.8;
+  }
+
+  /* Waveform decoration */
+  .waveform {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    margin: 24px 0;
+  }
+  .wave-bar {
+    width: 3px;
+    background: var(--accent);
+    border-radius: 2px;
+    animation: wave 1.2s ease-in-out infinite;
+    opacity: 0.6;
+  }
+  @keyframes wave {
+    0%, 100% { height: 8px; opacity: 0.3; }
+    50% { height: 32px; opacity: 1; }
+  }
+  .wave-bar:nth-child(1) { animation-delay: 0s; }
+  .wave-bar:nth-child(2) { animation-delay: 0.1s; }
+  .wave-bar:nth-child(3) { animation-delay: 0.2s; }
+  .wave-bar:nth-child(4) { animation-delay: 0.3s; }
+  .wave-bar:nth-child(5) { animation-delay: 0.4s; }
+  .wave-bar:nth-child(6) { animation-delay: 0.3s; }
+  .wave-bar:nth-child(7) { animation-delay: 0.2s; }
+  .wave-bar:nth-child(8) { animation-delay: 0.1s; }
+  .wave-bar:nth-child(9) { animation-delay: 0s; }
+
+  /* Tab navigation */
+  .tab-nav {
+    display: flex;
+    gap: 0;
+    margin-bottom: 32px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+
+  .tab-btn {
+    flex: 1;
+    padding: 16px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s;
+    letter-spacing: 1px;
+    position: relative;
+  }
+
+  .tab-btn.active {
+    color: var(--bg);
+    background: var(--accent);
+  }
+
+  .tab-btn.decrypt-tab.active {
+    background: var(--accent2);
+  }
+
+  .tab-btn:hover:not(.active) {
+    color: var(--text);
+    background: var(--surface2);
+  }
+
+  .tab-icon { margin-right: 8px; font-size: 16px; }
+
+  /* Panel */
+  .panel {
+    display: none;
+    animation: fadeIn 0.4s ease;
+  }
+  .panel.active { display: block; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Info strip */
+  .info-strip {
+    background: rgba(0,255,157,0.04);
+    border: 1px solid rgba(0,255,157,0.15);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 28px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+  .info-strip.decrypt-info {
+    background: rgba(0,153,255,0.04);
+    border-color: rgba(0,153,255,0.15);
+  }
+  .info-strip strong { color: var(--accent); }
+  .info-strip.decrypt-info strong { color: var(--accent2); }
+
+  /* Upload zones */
+  .upload-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  @media (max-width: 600px) {
+    .upload-grid { grid-template-columns: 1fr; }
+  }
+
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(0,255,157,0.04);
+  }
+
+  .upload-zone.audio-zone:hover, .upload-zone.audio-zone.drag-over {
+    border-color: var(--accent2);
+    background: rgba(0,153,255,0.04);
+  }
+
+  .upload-zone.has-file {
+    border-style: solid;
+    border-color: var(--accent);
+  }
+  .upload-zone.audio-zone.has-file {
+    border-color: var(--accent2);
+  }
+
+  .upload-icon {
+    font-size: 32px;
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  .upload-label {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  .upload-hint {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .upload-filename {
+    font-size: 11px;
+    color: var(--accent);
+    margin-top: 8px;
+    word-break: break-all;
+  }
+  .audio-zone .upload-filename { color: var(--accent2); }
+
+  input[type="file"] { display: none; }
+
+  /* Form controls */
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 600px) {
+    .form-row { grid-template-columns: 1fr; }
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  label {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  input[type="password"],
+  input[type="text"],
+  select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    transition: border-color 0.2s;
+    width: 100%;
+  }
+
+  input[type="password"]:focus,
+  input[type="text"]:focus,
+  select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+
+  .quality-display {
+    font-size: 11px;
+    color: var(--accent);
+    text-align: right;
+  }
+
+  /* Buttons */
+  .btn {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 10px;
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s;
+    letter-spacing: 1px;
+    position: relative;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .btn-encrypt {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  .btn-encrypt:hover:not(:disabled) {
+    box-shadow: 0 0 30px rgba(0,255,157,0.4);
+    transform: translateY(-1px);
+  }
+
+  .btn-decrypt {
+    background: var(--accent2);
+    color: var(--bg);
+  }
+
+  .btn-decrypt:hover:not(:disabled) {
+    box-shadow: 0 0 30px rgba(0,153,255,0.4);
+    transform: translateY(-1px);
+  }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  /* Progress */
+  .progress-container {
+    margin-top: 20px;
+    display: none;
+  }
+  .progress-container.visible { display: block; }
+
+  .progress-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--muted);
+    padding: 10px 14px;
+    border-radius: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    transition: all 0.3s;
+  }
+  .step.active {
+    color: var(--text);
+    border-color: var(--accent);
+    background: rgba(0,255,157,0.04);
+  }
+  .step.done {
+    color: var(--accent);
+    border-color: rgba(0,255,157,0.2);
+  }
+  .step.decrypt-step.active { border-color: var(--accent2); background: rgba(0,153,255,0.04); }
+  .step.decrypt-step.done { color: var(--accent2); border-color: rgba(0,153,255,0.2); }
+
+  .step-icon { font-size: 14px; }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Stats panel */
+  .stats-panel {
+    margin-top: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    display: none;
+  }
+  .stats-panel.visible { display: block; }
+
+  .stats-title {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  @media (max-width: 500px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .stat-item {
+    text-align: center;
+    padding: 12px;
+    background: var(--surface2);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  .stat-value {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--accent);
+    display: block;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* Success / Error */
+  .result-box {
+    margin-top: 16px;
+    padding: 16px 20px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.6;
+    display: none;
+  }
+  .result-box.visible { display: block; }
+  .result-box.success {
+    background: rgba(0,255,157,0.08);
+    border: 1px solid rgba(0,255,157,0.3);
+    color: var(--accent);
+  }
+  .result-box.error {
+    background: rgba(255,107,107,0.08);
+    border: 1px solid rgba(255,107,107,0.3);
+    color: var(--accent3);
+  }
+
+  /* Download button */
+  .download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 10px 20px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 6px;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .download-btn.audio-dl { background: var(--accent2); }
+  .download-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,255,157,0.3); }
+  .download-btn.audio-dl:hover { box-shadow: 0 4px 20px rgba(0,153,255,0.3); }
+
+  /* How it works section */
+  .how-it-works {
+    margin-top: 60px;
+    padding-top: 40px;
+    border-top: 1px solid var(--border);
+  }
+
+  .section-title {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 32px;
+    background: linear-gradient(90deg, #fff, var(--muted));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .pipeline {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+
+  .pipeline-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    position: relative;
+  }
+
+  .pipeline-step::after {
+    content: '→';
+    position: absolute;
+    right: -16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 16px;
+    z-index: 2;
+  }
+
+  .pipeline-step:last-child::after { display: none; }
+
+  .step-num {
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+
+  .step-name {
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .step-desc {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  footer {
+    margin-top: 60px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    padding-bottom: 40px;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+
+<div class="container">
+  <header>
+    <div class="logo-badge">🔐 STEGANOGRAPHY + AI</div>
+    <h1>StegoWave</h1>
+    <div class="waveform">
+      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+    </div>
+    <p class="subtitle">
+      Hide images inside audio files using AI compression + AES-256 encryption<br>
+      The stego audio sounds identical. Only the password unlocks the secret.
+    </p>
+  </header>
+
+  <!-- Tab Nav -->
+  <div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('encrypt')">
+      <span class="tab-icon">🔒</span> ENCRYPT
+    </button>
+    <button class="tab-btn decrypt-tab" onclick="switchTab('decrypt')">
+      <span class="tab-icon">🔓</span> DECRYPT
+    </button>
+  </div>
+
+  <!-- ENCRYPT PANEL -->
+  <div id="panel-encrypt" class="panel active">
+    <div class="info-strip">
+      <strong>How it works:</strong> Your image is AI-compressed (PCA autoencoder + DCT) to a fraction of its size,
+      then AES-256-GCM encrypted with your password, then hidden inside the audio's LSBs.
+      The output audio is virtually <strong>indistinguishable</strong> from the original.
+    </div>
+
+    <div class="upload-grid">
+      <div class="upload-zone" id="img-zone" onclick="document.getElementById('img-input').click()"
+           ondragover="dragOver(event,'img-zone')" ondragleave="dragLeave('img-zone')" ondrop="dropFile(event,'img-input','img-zone')">
+        <span class="upload-icon">🖼️</span>
+        <div class="upload-label">Drop Image Here</div>
+        <div class="upload-hint">PNG, JPG, WEBP — any size</div>
+        <div class="upload-filename" id="img-filename"></div>
+        <input type="file" id="img-input" accept="image/*" onchange="fileSelected(this,'img-zone','img-filename')">
+      </div>
+
+      <div class="upload-zone audio-zone" id="aud-zone" onclick="document.getElementById('aud-input').click()"
+           ondragover="dragOver(event,'aud-zone')" ondragleave="dragLeave('aud-zone')" ondrop="dropFile(event,'aud-input','aud-zone')">
+        <span class="upload-icon">🎵</span>
+        <div class="upload-label">Drop Audio Here</div>
+        <div class="upload-hint">WAV, MP3, FLAC — carrier file</div>
+        <div class="upload-filename" id="aud-filename"></div>
+        <input type="file" id="aud-input" accept="audio/*" onchange="fileSelected(this,'aud-zone','aud-filename')">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>🔑 Password (Required)</label>
+        <input type="password" id="enc-password" placeholder="Enter encryption password...">
+      </div>
+      <div class="form-group">
+        <label>⚙️ AI Compression Quality — <span class="quality-display" id="quality-val">50%</span></label>
+        <input type="range" id="quality" min="10" max="90" value="50"
+               oninput="document.getElementById('quality-val').textContent=this.value+'%'">
+        <div style="font-size:10px;color:var(--muted)">Lower = smaller payload but worse quality</div>
+      </div>
+    </div>
+
+    <button class="btn btn-encrypt" id="enc-btn" onclick="runEncrypt()">
+      🔒 ENCRYPT & HIDE IMAGE IN AUDIO
+    </button>
+
+    <!-- Progress -->
+    <div class="progress-container" id="enc-progress">
+      <div class="progress-steps" id="enc-steps"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-panel" id="enc-stats">
+      <div class="stats-title">// Compression Stats</div>
+      <div class="stats-grid" id="enc-stats-grid"></div>
+    </div>
+
+    <!-- Result -->
+    <div class="result-box" id="enc-result"></div>
+  </div>
+
+  <!-- DECRYPT PANEL -->
+  <div id="panel-decrypt" class="panel">
+    <div class="info-strip decrypt-info">
+      <strong>Receiver Mode:</strong> Upload the stego audio file you received.
+      Enter the correct password. The hidden image will be AI-decompressed and returned to you.
+      <strong>No original image or sender connection needed.</strong>
+    </div>
+
+    <div class="upload-grid">
+      <div class="upload-zone audio-zone" id="stego-zone" style="grid-column: 1 / -1;"
+           onclick="document.getElementById('stego-input').click()"
+           ondragover="dragOver(event,'stego-zone')" ondragleave="dragLeave('stego-zone')"
+           ondrop="dropFile(event,'stego-input','stego-zone')">
+        <span class="upload-icon">🎵</span>
+        <div class="upload-label">Upload Stego Audio File</div>
+        <div class="upload-hint">The audio file received from sender (WAV)</div>
+        <div class="upload-filename" id="stego-filename"></div>
+        <input type="file" id="stego-input" accept="audio/*" onchange="fileSelected(this,'stego-zone','stego-filename')">
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:16px">
+      <label>🔑 Password</label>
+      <input type="password" id="dec-password" placeholder="Enter decryption password...">
+    </div>
+
+    <button class="btn btn-decrypt" id="dec-btn" onclick="runDecrypt()">
+      🔓 EXTRACT & RECONSTRUCT IMAGE
+    </button>
+
+    <div class="progress-container" id="dec-progress">
+      <div class="progress-steps" id="dec-steps"></div>
+    </div>
+
+    <div class="result-box" id="dec-result"></div>
+  </div>
+
+  <!-- How it works -->
+  <div class="how-it-works">
+    <div class="section-title">// The Pipeline</div>
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="step-num">01 / SENDER</div>
+        <div class="step-name">AI Compression</div>
+        <div class="step-desc">PCA autoencoder + block DCT shrinks 8MB → ~100KB. zlib finishes the job.</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">02 / SENDER</div>
+        <div class="step-name">AES-256 Encrypt</div>
+        <div class="step-desc">PBKDF2 key derivation. AES-GCM with authentication tag. Wrong password = fail.</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">03 / SENDER</div>
+        <div class="step-name">LSB Steganography</div>
+        <div class="step-desc">2 LSBs per audio sample modified. Inaudible change, &lt;0.003% deviation.</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">04 / RECEIVER</div>
+        <div class="step-name">LSB Extract</div>
+        <div class="step-desc">Reads modified LSBs from audio, reassembles encrypted payload.</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">05 / RECEIVER</div>
+        <div class="step-name">AES Decrypt</div>
+        <div class="step-desc">Password derives key. GCM tag verifies integrity. Compressed data recovered.</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">06 / RECEIVER</div>
+        <div class="step-name">AI Reconstruct</div>
+        <div class="step-desc">Inverse PCA + inverse DCT reconstructs image. Bilinear upsampling restores size.</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    StegoWave — Audio Steganography · AES-256-GCM · PCA Autoencoder · LSB · Built with Python + Flask
+  </footer>
+</div>
+
+<script>
+const API = 'http://localhost:5000/api';
+
+// ── Tab switching ───────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+  const btns = document.querySelectorAll('.tab-btn');
+  btns[tab === 'encrypt' ? 0 : 1].classList.add('active');
+}
+
+// ── File handling ───────────────────────────────────────────────────────────
+function fileSelected(input, zoneId, filenameId) {
+  const zone = document.getElementById(zoneId);
+  const fn = document.getElementById(filenameId);
+  if (input.files[0]) {
+    zone.classList.add('has-file');
+    const size = (input.files[0].size / 1024).toFixed(1);
+    fn.textContent = `✓ ${input.files[0].name} (${size} KB)`;
+  }
+}
+
+function dragOver(e, id) {
+  e.preventDefault();
+  document.getElementById(id).classList.add('drag-over');
+}
+function dragLeave(id) {
+  document.getElementById(id).classList.remove('drag-over');
+}
+function dropFile(e, inputId, zoneId) {
+  e.preventDefault();
+  dragLeave(zoneId);
+  const input = document.getElementById(inputId);
+  const dt = e.dataTransfer;
+  if (dt.files.length) {
+    const dT = new DataTransfer();
+    dT.items.add(dt.files[0]);
+    input.files = dT.files;
+    fileSelected(input, zoneId, zoneId.replace('zone', 'filename').replace('stego-zone', 'stego-filename'));
+  }
+}
+
+// ── Encrypt ─────────────────────────────────────────────────────────────────
+const ENCRYPT_STEPS = [
+  { id: 'e1', icon: '🧠', label: 'AI compressing image (PCA autoencoder + DCT)...' },
+  { id: 'e2', icon: '🔐', label: 'Encrypting with AES-256-GCM...' },
+  { id: 'e3', icon: '🎵', label: 'Hiding data in audio LSBs...' },
+  { id: 'e4', icon: '✅', label: 'Done! Stego audio ready.' },
+];
+
+const DECRYPT_STEPS = [
+  { id: 'd1', icon: '🎵', label: 'Extracting hidden data from audio LSBs...' },
+  { id: 'd2', icon: '🔓', label: 'Decrypting with password...' },
+  { id: 'd3', icon: '🧠', label: 'AI reconstructing image (inverse PCA + DCT)...' },
+  { id: 'd4', icon: '✅', label: 'Done! Image recovered.' },
+];
+
+function renderSteps(containerId, steps, prefix) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = steps.map(s => `
+    <div class="step ${prefix}" id="step-${s.id}">
+      <span class="step-icon">${s.icon}</span>
+      <span>${s.label}</span>
+    </div>`).join('');
+}
+
+function setStepActive(id) {
+  const el = document.getElementById('step-' + id);
+  if (el) el.classList.add('active');
+}
+function setStepDone(id) {
+  const el = document.getElementById('step-' + id);
+  if (el) { el.classList.remove('active'); el.classList.add('done'); }
+}
+
+async function runEncrypt() {
+  const imgFile = document.getElementById('img-input').files[0];
+  const audFile = document.getElementById('aud-input').files[0];
+  const password = document.getElementById('enc-password').value;
+  const quality = document.getElementById('quality').value;
+
+  if (!imgFile) return showResult('enc-result', 'error', '⚠️ Please select an image file.');
+  if (!audFile) return showResult('enc-result', 'error', '⚠️ Please select an audio file.');
+  if (!password) return showResult('enc-result', 'error', '⚠️ Password is required.');
+
+  // UI setup
+  document.getElementById('enc-btn').disabled = true;
+  document.getElementById('enc-result').className = 'result-box';
+  document.getElementById('enc-stats').className = 'stats-panel';
+
+  const prog = document.getElementById('enc-progress');
+  prog.classList.add('visible');
+  renderSteps('enc-steps', ENCRYPT_STEPS, '');
+
+  // Simulate step progression (backend does all 3 at once, so we animate)
+  setStepActive('e1');
+  setTimeout(() => { setStepDone('e1'); setStepActive('e2'); }, 800);
+  setTimeout(() => { setStepDone('e2'); setStepActive('e3'); }, 1600);
+
+  const fd = new FormData();
+  fd.append('image', imgFile);
+  fd.append('audio', audFile);
+  fd.append('password', password);
+  fd.append('quality', quality);
+
+  try {
+    const resp = await fetch(`${API}/encrypt`, { method: 'POST', body: fd });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error || 'Encryption failed');
+    }
+
+    setStepDone('e3'); setStepActive('e4'); setStepDone('e4');
+
+    // Get stats from headers
+    const origSize = parseInt(resp.headers.get('X-Original-Image-Size') || '0');
+    const compSize = parseInt(resp.headers.get('X-Compressed-Size') || '0');
+    const ratio = parseFloat(resp.headers.get('X-Compression-Ratio') || '0');
+    const encSize = parseInt(resp.headers.get('X-Encrypted-Size') || '0');
+
+    // Stats
+    if (origSize) {
+      document.getElementById('enc-stats').classList.add('visible');
+      document.getElementById('enc-stats-grid').innerHTML = `
+        <div class="stat-item"><span class="stat-value">${(origSize/1024).toFixed(1)}KB</span><span class="stat-label">Original Size</span></div>
+        <div class="stat-item"><span class="stat-value">${(compSize/1024).toFixed(1)}KB</span><span class="stat-label">Compressed</span></div>
+        <div class="stat-item"><span class="stat-value">${ratio}x</span><span class="stat-label">Compression Ratio</span></div>
+      `;
+    }
+
+    // Download
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    showResult('enc-result', 'success',
+      `✅ Success! Image hidden inside audio.<br>
+       Stego audio is ready to download. Share this audio file with the receiver — they only need the audio + password.<br><br>
+       <a class="download-btn audio-dl" href="${url}" download="stego_audio.wav">⬇ Download Stego Audio</a>`);
+
+  } catch(e) {
+    setStepDone('e1'); setStepDone('e2'); setStepDone('e3');
+    showResult('enc-result', 'error', `❌ ${e.message}`);
+  }
+
+  document.getElementById('enc-btn').disabled = false;
+}
+
+async function runDecrypt() {
+  const stegoFile = document.getElementById('stego-input').files[0];
+  const password = document.getElementById('dec-password').value;
+
+  if (!stegoFile) return showResult('dec-result', 'error', '⚠️ Please upload the stego audio file.');
+  if (!password) return showResult('dec-result', 'error', '⚠️ Password is required.');
+
+  document.getElementById('dec-btn').disabled = true;
+  document.getElementById('dec-result').className = 'result-box';
+
+  const prog = document.getElementById('dec-progress');
+  prog.classList.add('visible');
+  renderSteps('dec-steps', DECRYPT_STEPS, 'decrypt-step');
+
+  setStepActive('d1');
+  setTimeout(() => { setStepDone('d1'); setStepActive('d2'); }, 800);
+  setTimeout(() => { setStepDone('d2'); setStepActive('d3'); }, 1600);
+
+  const fd = new FormData();
+  fd.append('audio', stegoFile);
+  fd.append('password', password);
+
+  try {
+    const resp = await fetch(`${API}/decrypt`, { method: 'POST', body: fd });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error || 'Decryption failed');
+    }
+
+    setStepDone('d3'); setStepActive('d4'); setStepDone('d4');
+
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+
+    // Show preview
+    showResult('dec-result', 'success',
+      `✅ Image successfully recovered and reconstructed!<br><br>
+       <img src="${url}" style="max-width:100%;border-radius:8px;margin-bottom:12px;border:1px solid rgba(0,153,255,0.3)"><br>
+       <a class="download-btn" href="${url}" download="recovered_image.png">⬇ Download Recovered Image</a>`);
+
+  } catch(e) {
+    setStepDone('d1'); setStepDone('d2'); setStepDone('d3');
+    showResult('dec-result', 'error', `❌ ${e.message}`);
+  }
+
+  document.getElementById('dec-btn').disabled = false;
+}
+
+function showResult(id, type, html) {
+  const el = document.getElementById(id);
+  el.className = `result-box visible ${type}`;
+  el.innerHTML = html;
+}
+</script>
+</body>
+</html>
