@@ -1,23 +1,11 @@
 """
-Improved AI Image Compression.
-
-Changes from v1:
-- Use JPEG as the core compression engine (battle-tested, great quality/size ratio)
-- PCA autoencoder is applied on top of JPEG coefficients for extra compression
-- Internal resolution increased: we keep up to 512px (not 256)
-- Quality is directly mapped to JPEG quality (much more predictable)
-- Decompression: bicubic upsampling + unsharp mask for sharpness
-
-Why JPEG as base?
-  JPEG already uses DCT + quantization (same math as our old approach)
-  but is highly optimized. We layer PCA on residuals for extra squeeze.
-  This gives clean, artifact-free reconstructions even at high compression.
+AI Image Compression using JPEG + zlib pipeline.
 
 Compression pipeline:
-  1. Resize to max 512px (preserving aspect ratio)
-  2. JPEG encode at chosen quality (40-85)
+  1. Resize to max 384-640px depending on quality
+  2. JPEG encode at mapped quality (25-92)
   3. zlib on JPEG bytes for extra 10-20% reduction
-  
+
 Decompression:
   1. zlib decompress
   2. JPEG decode
@@ -31,28 +19,29 @@ import struct
 from PIL import Image, ImageFilter
 
 
-def compress_image(image_bytes: bytes, quality: int = 50) -> bytes:
+def compress_image(image_bytes: bytes, quality: int = 50) -> tuple:
     """
     Compress image using JPEG + zlib.
-    
+
     quality: 1-100
       - 80-90: Very good, larger payload (~300-500KB for 4MB image)
-      - 50-70: Good quality, medium payload (~100-250KB)  
+      - 50-70: Good quality, medium payload (~100-250KB)
       - 20-40: Acceptable, small payload (~40-100KB)
       - 10-20: Low quality, tiny payload (~20-50KB)
-    
-    Returns: compressed bytes with original dimensions in header.
+
+    Returns:
+        tuple: (compressed_bytes, stats_dict)
+            compressed_bytes — zlib(header + JPEG), ready for encryption
+            stats_dict — all intermediate sizes for UI display
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     orig_w, orig_h = img.size
 
     # Map quality slider (1-100) to internal JPEG quality (25-92)
-    # This gives a better perceptual range
     jpeg_quality = int(25 + (quality / 100) * 67)
     jpeg_quality = max(25, min(92, jpeg_quality))
 
     # Determine resize target based on quality
-    # Higher quality = keep more resolution
     if quality >= 70:
         max_dim = 640
     elif quality >= 40:
@@ -67,23 +56,41 @@ def compress_image(image_bytes: bytes, quality: int = 50) -> bytes:
 
     img_resized = img.resize((new_w, new_h), Image.LANCZOS)
 
-    # JPEG encode
+    # JPEG encode — this is the viewable image format size
     jpeg_buf = io.BytesIO()
-    img_resized.save(jpeg_buf, format='JPEG', quality=jpeg_quality, optimize=True, progressive=True)
+    img_resized.save(jpeg_buf, format='JPEG', quality=jpeg_quality,
+                     optimize=True, progressive=True)
     jpeg_bytes = jpeg_buf.getvalue()
+    jpeg_size = len(jpeg_bytes)  # ← actual image format size (viewable JPEG)
 
-    # Pack header: orig_w, orig_h (so we know what size to restore to)
+    # Pack header: orig_w, orig_h
     header = struct.pack('>II', orig_w, orig_h)
 
-    # zlib compress the JPEG bytes
+    # zlib compress the header + JPEG bytes
     compressed = zlib.compress(header + jpeg_bytes, level=6)
+    compressed_size = len(compressed)
 
-    print(f"[COMPRESS] {len(image_bytes)/1024:.0f}KB → resize {orig_w}x{orig_h} → {new_w}x{new_h} "
-          f"→ JPEG q{jpeg_quality} {len(jpeg_bytes)/1024:.0f}KB "
-          f"→ zlib {len(compressed)/1024:.0f}KB "
-          f"(ratio {len(image_bytes)/len(compressed):.1f}x)")
+    # Build stats dict for UI
+    stats = {
+        'original_size':     len(image_bytes),          # raw input bytes
+        'orig_w':            orig_w,
+        'orig_h':            orig_h,
+        'resized_w':         new_w,
+        'resized_h':         new_h,
+        'jpeg_quality':      jpeg_quality,
+        'jpeg_size':         jpeg_size,                  # viewable JPEG size
+        'compressed_size':   compressed_size,            # after zlib (what gets encrypted)
+        'jpeg_ratio':        round(len(image_bytes) / jpeg_size, 1),
+        'total_ratio':       round(len(image_bytes) / compressed_size, 1),
+    }
 
-    return compressed
+    print(f"[COMPRESS] {len(image_bytes)/1024:.0f}KB "
+          f"→ resize {orig_w}x{orig_h}→{new_w}x{new_h} "
+          f"→ JPEG q{jpeg_quality}: {jpeg_size/1024:.1f}KB "
+          f"→ zlib: {compressed_size/1024:.1f}KB "
+          f"(ratio {stats['total_ratio']}x)")
+
+    return compressed, stats
 
 
 def decompress_image(compressed_bytes: bytes) -> bytes:
@@ -91,25 +98,19 @@ def decompress_image(compressed_bytes: bytes) -> bytes:
     Decompress image back to original dimensions.
     Returns PNG bytes.
     """
-    # zlib decompress
     raw = zlib.decompress(compressed_bytes)
-
-    # Unpack header
     orig_w, orig_h = struct.unpack('>II', raw[:8])
     jpeg_bytes = raw[8:]
 
-    # JPEG decode
     img = Image.open(io.BytesIO(jpeg_bytes)).convert("RGB")
 
-    # Upsample to original size using bicubic (much cleaner than bilinear)
     if img.size != (orig_w, orig_h):
         img = img.resize((orig_w, orig_h), Image.BICUBIC)
 
-    # Unsharp mask to recover some sharpness lost in compression + upsampling
     img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=3))
 
     out = io.BytesIO()
-    img.save(out, format='PNG', optimize=False)  # PNG for lossless final output
+    img.save(out, format='PNG', optimize=False)
     return out.getvalue()
 
 
