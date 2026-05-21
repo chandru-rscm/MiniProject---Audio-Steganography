@@ -1307,7 +1307,12 @@
     </div>
 
     <script>
-      const API = 'http://localhost:5000/api';
+      // Dynamically determine the API base URL based on how the page is loaded
+      const API = (window.location.hostname === 'localhost' || 
+                   window.location.hostname === '127.0.0.1' || 
+                   window.location.hostname === '') 
+        ? 'http://localhost:5000/api' 
+        : `${window.location.origin}/api`;
 
       // ── Tab switching ────────────────────────────────────────────────
       function switchTab(tab) {

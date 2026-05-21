@@ -12,7 +12,7 @@ import io
 import zlib
 import base64
 import traceback
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 
 from compression import compress_image, decompress_image, get_compression_ratio, get_compression_mode
@@ -29,6 +29,12 @@ _last_hist_original = None
 _last_hist_stego    = None
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB limit
+
+
+@app.route('/')
+def index():
+    frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
+    return send_from_directory(frontend_dir, 'index.html')
 
 
 @app.route('/api/health', methods=['GET'])
