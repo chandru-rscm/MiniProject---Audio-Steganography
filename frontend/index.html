@@ -1260,57 +1260,57 @@
           </div>
         </div>
       </div>
+    </div><!-- ══ END DECRYPT PANEL ══ -->
 
-      <!-- How it works -->
-      <div class="how-it-works">
-        <div class="section-title">// The Pipeline</div>
-        <div class="pipeline">
-          <div class="pipeline-step">
-            <div class="step-num">01 / SENDER</div>
-            <div class="step-name">AI Compression</div>
-            <div class="step-desc">Autoencoder reduces image into a latent space tensor representation. zlib on top. The
-              entire core compression is handled by an AI model.</div>
-          </div>
-          <div class="pipeline-step">
-            <div class="step-num">02 / SENDER</div>
-            <div class="step-name">AES-256 Encrypt</div>
-            <div class="step-desc">PBKDF2 key derivation. AES-GCM with authentication tag. Wrong password = fail.</div>
-          </div>
-          <div class="pipeline-step">
-            <div class="step-num">03 / SENDER</div>
-            <div class="step-name">LSB Steganography</div>
-            <div class="step-desc">2 LSBs per audio sample. 4 possibilities per sample. &lt;0.003% change.</div>
-          </div>
-          <div class="pipeline-step">
-            <div class="step-num">04 / RECEIVER</div>
-            <div class="step-name">LSB Extract</div>
-            <div class="step-desc">Reads modified LSBs, checks MAGIC bytes, reassembles payload.</div>
-          </div>
-          <div class="pipeline-step">
-            <div class="step-num">05 / RECEIVER</div>
-            <div class="step-name">AES Decrypt</div>
-            <div class="step-desc">Password derives key via PBKDF2. GCM tag verifies integrity.</div>
-          </div>
-          <div class="pipeline-step">
-            <div class="step-num">06 / RECEIVER</div>
-            <div class="step-name">AI Reconstruct</div>
-            <div class="step-desc">zlib -> Autoencoder decoder reconstruction -> DnCNN AI enhancement (artifact removal)
-              -> bicubic upsample to
-              original dimensions.</div>
-          </div>
+    <!-- How it works -->
+    <div class="how-it-works">
+      <div class="section-title">// The Pipeline</div>
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="step-num">01 / SENDER</div>
+          <div class="step-name">AI Compression</div>
+          <div class="step-desc">Autoencoder reduces image into a latent space tensor representation. zlib on top. The
+            entire core compression is handled by an AI model.</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">02 / SENDER</div>
+          <div class="step-name">AES-256 Encrypt</div>
+          <div class="step-desc">PBKDF2 key derivation. AES-GCM with authentication tag. Wrong password = fail.</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">03 / SENDER</div>
+          <div class="step-name">LSB Steganography</div>
+          <div class="step-desc">2 LSBs per audio sample. 4 possibilities per sample. &lt;0.003% change.</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">04 / RECEIVER</div>
+          <div class="step-name">LSB Extract</div>
+          <div class="step-desc">Reads modified LSBs, checks MAGIC bytes, reassembles payload.</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">05 / RECEIVER</div>
+          <div class="step-name">AES Decrypt</div>
+          <div class="step-desc">Password derives key via PBKDF2. GCM tag verifies integrity.</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">06 / RECEIVER</div>
+          <div class="step-name">AI Reconstruct</div>
+          <div class="step-desc">zlib -> Autoencoder decoder reconstruction -> DnCNN AI enhancement (artifact removal)
+            -> bicubic upsample to
+            original dimensions.</div>
         </div>
       </div>
-
-      <footer>
-        <div style="margin-bottom: 8px;">
-          StegoWave — Audio Steganography · AI-Enhanced Compression (DnCNN) · AES-256-GCM · LSB · Python + Flask
-        </div>
-        <div style="font-size: 10px; opacity: 0.8; line-height: 1.6;">
-          Created by Chandramohan RS, Sudar P, Yuvaraja Prasath S<br>
-          under the guidance of Dr.Lakshmi C (Senior assistant professor, SEEE, Sastra deemed to be university)
-        </div>
-      </footer>
     </div>
+
+    <footer>
+      <div style="margin-bottom: 8px;">
+        StegoWave — Audio Steganography · AI-Enhanced Compression (DnCNN) · AES-256-GCM · LSB · Python + Flask
+      </div>
+      <div style="font-size: 10px; opacity: 0.8; line-height: 1.6;">
+        Created by Chandramohan RS, Sudar P, Yuvaraja Prasath S<br>
+        under the guidance of Dr.Lakshmi C (Senior assistant professor, SEEE, Sastra deemed to be university)
+      </div>
+    </footer>
 
     <script>
       // Dynamically determine the API base URL based on how the page is loaded
