@@ -1,168 +1,104 @@
 """
-Quality metrics for StegoWave.
-
-Audio metrics  (original WAV vs stego WAV):
-  - SNR   : Signal-to-Noise Ratio (dB)  — how inaudible the change is
-  - PSNR  : Peak SNR (dB)               — standard audio quality measure
-  - MSE   : Mean Square Error           — average sample-level change
-  - Correlation : Pearson correlation   — waveform similarity (0-1)
-
-Image metrics  (original image vs recovered image):
-  - PSNR  : Peak Signal-to-Noise Ratio (dB) — reconstruction quality
-  - SSIM  : Structural Similarity Index (0-1) — perceptual similarity
-  - MSE   : Mean Square Error                 — pixel-level error
-  - RMSE  : Root MSE                          — in pixel units (0-255)
+Quality Metrics — StegoWave
+Optimized with NumPy to handle massive 100+ Megapixel images instantly.
 """
 
 import io
 import wave
-import struct
 import math
 import numpy as np
 from PIL import Image
-
 
 # ══════════════════════════════════════════════════════════════════
 #  AUDIO METRICS
 # ══════════════════════════════════════════════════════════════════
 
-def _read_wav_samples(wav_bytes: bytes) -> np.ndarray:
-    """Read raw int16 PCM samples from WAV bytes."""
-    with wave.open(io.BytesIO(wav_bytes)) as wf:
-        frames = wf.readframes(wf.getnframes())
-    return np.frombuffer(frames, dtype=np.int16).astype(np.float64)
-
-
 def compute_audio_metrics(original_bytes: bytes, stego_bytes: bytes) -> dict:
-    """
-    Compare original WAV vs stego WAV and return quality metrics.
+    buf_o = io.BytesIO(original_bytes)
+    with wave.open(buf_o) as wf:
+        orig = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+        
+    buf_s = io.BytesIO(stego_bytes)
+    with wave.open(buf_s) as wf:
+        stego = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
 
-    Returns dict with SNR, PSNR, MSE, correlation — all rounded.
-    """
-    orig  = _read_wav_samples(original_bytes)
-    stego = _read_wav_samples(stego_bytes)
-
-    # Trim to same length (stego should be identical length, just in case)
     n = min(len(orig), len(stego))
-    orig  = orig[:n]
-    stego = stego[:n]
+    orig = orig[:n].astype(np.float64)
+    stego = stego[:n].astype(np.float64)
 
-    noise = stego - orig   # difference = LSB noise introduced
+    noise = stego - orig
+    mse = np.mean(noise**2)
+    signal_power = np.mean(orig**2)
+    
+    snr = float('inf') if mse == 0 else 10 * np.log10(signal_power / mse)
+    psnr = float('inf') if mse == 0 else 10 * np.log10((32767.0**2) / mse)
+    
+    # Correlation
+    mean_o = np.mean(orig)
+    mean_s = np.mean(stego)
+    den = np.sqrt(np.sum((orig - mean_o)**2) * np.sum((stego - mean_s)**2))
+    correlation = 1.0 if den == 0 else np.sum((orig - mean_o) * (stego - mean_s)) / den
+    
+    modified = np.sum(noise != 0)
+    pct_mod = (modified / n) * 100
 
-    # MSE
-    mse = float(np.mean(noise ** 2))
-
-    # SNR = 10 * log10(signal_power / noise_power)
-    signal_power = float(np.mean(orig ** 2))
-    noise_power  = float(np.mean(noise ** 2))
-    if noise_power == 0:
-        snr = float('inf')
-    else:
-        snr = 10 * math.log10(signal_power / noise_power)
-
-    # PSNR = 10 * log10(MAX² / MSE)  where MAX = 32767 for int16
-    MAX_VAL = 32767.0
-    if mse == 0:
-        psnr = float('inf')
-    else:
-        psnr = 10 * math.log10((MAX_VAL ** 2) / mse)
-
-    # Pearson correlation coefficient
-    if np.std(orig) == 0 or np.std(stego) == 0:
-        correlation = 1.0
-    else:
-        correlation = float(np.corrcoef(orig, stego)[0, 1])
-
-    # Percentage of samples that were actually modified
-    modified_samples = int(np.sum(noise != 0))
-    total_samples    = n
-    pct_modified     = round((modified_samples / total_samples) * 100, 4)
+    # BER for audio
+    orig_bits = np.unpackbits(orig.astype(np.int16).view(np.uint8))
+    stego_bits = np.unpackbits(stego.astype(np.int16).view(np.uint8))
+    ber = np.sum(orig_bits != stego_bits) / len(orig_bits)
 
     return {
-        'snr':              round(snr, 2),
-        'psnr':             round(psnr, 2),
-        'mse':              round(mse, 4),
-        'correlation':      round(correlation, 6),
-        'pct_modified':     pct_modified,
-        'total_samples':    total_samples,
-        'modified_samples': modified_samples,
+        'snr': float(round(snr, 2)),
+        'psnr': float(round(psnr, 2)),
+        'mse': float(round(mse, 4)),
+        'correlation': float(round(correlation, 6)),
+        'pct_modified': float(round(pct_mod, 4)),
+        'ber': float(round(ber, 6)),
+        'total_samples': int(n),
+        'modified_samples': int(modified),
     }
-
 
 # ══════════════════════════════════════════════════════════════════
 #  IMAGE METRICS
 # ══════════════════════════════════════════════════════════════════
 
-def _img_to_array(image_bytes: bytes) -> np.ndarray:
-    """Load image bytes → float64 numpy array, RGB, range 0-255."""
-    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-    return np.array(img, dtype=np.float64)
-
-
 def compute_image_metrics(original_bytes: bytes, recovered_bytes: bytes) -> dict:
-    """
-    Compare original image vs recovered image and return quality metrics.
-
-    Returns PSNR, SSIM, MSE, RMSE — all rounded.
-    """
-    orig_arr = _img_to_array(original_bytes)
-    recv_arr = _img_to_array(recovered_bytes)
-
-    # Resize recovered to match original dimensions if different
-    if orig_arr.shape != recv_arr.shape:
-        orig_img = Image.open(io.BytesIO(original_bytes)).convert('RGB')
-        recv_img = Image.open(io.BytesIO(recovered_bytes)).convert('RGB')
-        recv_img = recv_img.resize(orig_img.size, Image.BICUBIC)
-        recv_arr = np.array(recv_img, dtype=np.float64)
-
-    diff = orig_arr - recv_arr
-
-    # MSE across all pixels and channels
-    mse  = float(np.mean(diff ** 2))
-    rmse = math.sqrt(mse)
-
-    # PSNR
-    MAX_VAL = 255.0
-    if mse == 0:
-        psnr = float('inf')
-    else:
-        psnr = 10 * math.log10((MAX_VAL ** 2) / mse)
-
-    # SSIM (per channel, then average)
-    ssim_val = _ssim(orig_arr, recv_arr)
+    orig_img = Image.open(io.BytesIO(original_bytes)).convert('RGB')
+    rec_img = Image.open(io.BytesIO(recovered_bytes)).convert('RGB')
+    
+    if rec_img.size != orig_img.size:
+        rec_img = rec_img.resize(orig_img.size, Image.LANCZOS)
+        
+    orig = np.array(orig_img, dtype=np.float64)
+    rec = np.array(rec_img, dtype=np.float64)
+    
+    mse = np.mean((orig - rec) ** 2)
+    rmse = np.sqrt(mse)
+    psnr = float('inf') if mse == 0 else 10 * np.log10((255.0 ** 2) / mse)
+    
+    # SSIM (Global)
+    C1 = (0.01 * 255) ** 2
+    C2 = (0.03 * 255) ** 2
+    
+    mu1 = np.mean(orig, axis=(0,1))
+    mu2 = np.mean(rec, axis=(0,1))
+    var1 = np.var(orig, axis=(0,1))
+    var2 = np.var(rec, axis=(0,1))
+    cov12 = np.mean((orig - mu1) * (rec - mu2), axis=(0,1))
+    
+    ssim_channels = ((2 * mu1 * mu2 + C1) * (2 * cov12 + C2)) / ((mu1**2 + mu2**2 + C1) * (var1 + var2 + C2))
+    ssim_val = np.mean(ssim_channels)
+    
+    # BER
+    orig_bits = np.unpackbits(orig.astype(np.uint8))
+    rec_bits = np.unpackbits(rec.astype(np.uint8))
+    ber = np.sum(orig_bits != rec_bits) / len(orig_bits)
 
     return {
-        'psnr':       round(psnr, 2),
-        'ssim':       round(ssim_val, 4),
-        'ssim_pct':   round(ssim_val * 100, 2),   # e.g. 82.5%
-        'mse':        round(mse, 2),
-        'rmse':       round(rmse, 2),
+        'psnr': float(round(psnr, 2)),
+        'ssim': float(round(ssim_val, 4)),
+        'ssim_pct': float(round(ssim_val * 100, 2)),
+        'mse': float(round(mse, 2)),
+        'rmse': float(round(rmse, 2)),
+        'ber': float(round(ber, 6))
     }
-
-
-def _ssim(img1: np.ndarray, img2: np.ndarray) -> float:
-    """
-    Compute mean SSIM across all channels.
-    Uses standard constants: C1=(0.01*255)^2, C2=(0.03*255)^2
-    Window-free version (global statistics) — fast and good enough for demo.
-    """
-    C1 = (0.01 * 255) ** 2   # 6.5025
-    C2 = (0.03 * 255) ** 2   # 58.5225
-
-    ssim_channels = []
-    for c in range(img1.shape[2]):   # R, G, B
-        ch1 = img1[:, :, c]
-        ch2 = img2[:, :, c]
-
-        mu1    = np.mean(ch1)
-        mu2    = np.mean(ch2)
-        sigma1 = np.std(ch1)
-        sigma2 = np.std(ch2)
-        sigma12 = np.mean((ch1 - mu1) * (ch2 - mu2))
-
-        numerator   = (2 * mu1 * mu2 + C1) * (2 * sigma12 + C2)
-        denominator = (mu1**2 + mu2**2 + C1) * (sigma1**2 + sigma2**2 + C2)
-
-        ssim_channels.append(numerator / denominator)
-
-    return float(np.mean(ssim_channels))

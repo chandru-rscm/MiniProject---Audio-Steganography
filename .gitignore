@@ -1,0 +1,38 @@
+# System and IDE files
+.venv/
+.vscode/
+*.code-workspace
+.DS_Store
+
+# Python compiled files and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Local audio test files
+*.wav
+*.mp3
+
+# Heavy external binaries (ffmpeg)
+backend/ffmpeg.exe
+backend/ffprobe.exe
+
+# Model checkpoints and trained weights
+backend/*.pth
+*.pth
+backend/checkpoints/
+
+# Training datasets and training scripts
+backend/data/
+backend/train.py
+backend/train_enhancer.py
+
+# Panel evaluation and batch testing assets
+backend/panel_evaluation/
+backend/batch_evaluate.py
+backend/generate_panel_dataset.py
+
+# Academic report templates and directories
+report/

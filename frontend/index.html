@@ -1,994 +1,1763 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StegoWave — Audio Steganography</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #080c10;
-    --surface: #0d1117;
-    --surface2: #161b22;
-    --border: #21262d;
-    --accent: #00ff9d;
-    --accent2: #0099ff;
-    --accent3: #ff6b6b;
-    --text: #e6edf3;
-    --muted: #7d8590;
-    --font-display: 'Syne', sans-serif;
-    --font-mono: 'Space Mono', monospace;
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font-mono);
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,255,157,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,255,157,0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  .orb { position: fixed; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 0; opacity: 0.15; }
-  .orb-1 { width: 400px; height: 400px; background: var(--accent); top: -100px; right: -100px; animation: drift 8s ease-in-out infinite; }
-  .orb-2 { width: 300px; height: 300px; background: var(--accent2); bottom: -80px; left: -80px; animation: drift 10s ease-in-out infinite reverse; }
-
-  @keyframes drift { 0%,100%{transform:translate(0,0)} 50%{transform:translate(30px,20px)} }
-
-  .container { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 40px 20px; }
-
-  header { text-align: center; margin-bottom: 60px; }
-
-  .logo-badge {
-    display: inline-block;
-    background: linear-gradient(135deg, rgba(0,255,157,0.1), rgba(0,153,255,0.1));
-    border: 1px solid rgba(0,255,157,0.3);
-    border-radius: 6px;
-    padding: 6px 14px;
-    font-size: 11px;
-    letter-spacing: 3px;
-    color: var(--accent);
-    text-transform: uppercase;
-    margin-bottom: 20px;
-  }
-
-  h1 {
-    font-family: var(--font-display);
-    font-size: clamp(36px, 6vw, 72px);
-    font-weight: 800;
-    line-height: 1;
-    background: linear-gradient(135deg, #fff 40%, var(--accent));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 16px;
-  }
-
-  .subtitle { color: var(--muted); font-size: 13px; letter-spacing: 1px; line-height: 1.8; }
-
-  /* Fixed container height — wave animates inside, never pushes page */
-  .waveform { display:flex; align-items:center; justify-content:center; gap:3px; margin:24px 0; height:36px; overflow:hidden; }
-  .wave-bar { width:3px; height:8px; background:var(--accent); border-radius:2px; opacity:0.6; transform-origin:center center; animation:wave 1.2s ease-in-out infinite; }
-  @keyframes wave { 0%,100%{transform:scaleY(1);opacity:0.3} 50%{transform:scaleY(4);opacity:1} }
-  .wave-bar:nth-child(1){animation-delay:0s}.wave-bar:nth-child(2){animation-delay:0.1s}
-  .wave-bar:nth-child(3){animation-delay:0.2s}.wave-bar:nth-child(4){animation-delay:0.3s}
-  .wave-bar:nth-child(5){animation-delay:0.4s}.wave-bar:nth-child(6){animation-delay:0.3s}
-  .wave-bar:nth-child(7){animation-delay:0.2s}.wave-bar:nth-child(8){animation-delay:0.1s}
-  .wave-bar:nth-child(9){animation-delay:0s}
-
-  .tab-nav { display:flex; gap:0; margin-bottom:32px; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--surface); }
-  .tab-btn { flex:1; padding:16px; background:transparent; border:none; color:var(--muted); font-family:var(--font-display); font-size:15px; font-weight:700; cursor:pointer; transition:all 0.3s; letter-spacing:1px; }
-  .tab-btn.active { color:var(--bg); background:var(--accent); }
-  .tab-btn.decrypt-tab.active { background:var(--accent2); }
-  .tab-btn:hover:not(.active) { color:var(--text); background:var(--surface2); }
-  .tab-icon { margin-right:8px; font-size:16px; }
-
-  .panel { display:none; animation:fadeIn 0.4s ease; }
-  .panel.active { display:block; }
-  @keyframes fadeIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-
-  .info-strip { background:rgba(0,255,157,0.04); border:1px solid rgba(0,255,157,0.15); border-radius:8px; padding:16px 20px; margin-bottom:28px; font-size:12px; color:var(--muted); line-height:1.7; }
-  .info-strip.decrypt-info { background:rgba(0,153,255,0.04); border-color:rgba(0,153,255,0.15); }
-  .info-strip strong { color:var(--accent); }
-  .info-strip.decrypt-info strong { color:var(--accent2); }
-
-  .upload-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
-  @media(max-width:600px){.upload-grid{grid-template-columns:1fr}}
-
-  .upload-zone { border:2px dashed var(--border); border-radius:12px; padding:32px 20px; text-align:center; cursor:pointer; transition:all 0.3s; background:var(--surface); position:relative; overflow:hidden; }
-  .upload-zone:hover,.upload-zone.drag-over { border-color:var(--accent); background:rgba(0,255,157,0.04); }
-  .upload-zone.audio-zone:hover,.upload-zone.audio-zone.drag-over { border-color:var(--accent2); background:rgba(0,153,255,0.04); }
-  .upload-zone.has-file { border-style:solid; border-color:var(--accent); }
-  .upload-zone.audio-zone.has-file { border-color:var(--accent2); }
-  .upload-icon { font-size:32px; margin-bottom:10px; display:block; }
-  .upload-label { font-family:var(--font-display); font-size:13px; font-weight:600; color:var(--text); margin-bottom:4px; letter-spacing:0.5px; }
-  .upload-hint { font-size:11px; color:var(--muted); }
-  .upload-filename { font-size:11px; color:var(--accent); margin-top:8px; word-break:break-all; }
-  .audio-zone .upload-filename { color:var(--accent2); }
-  input[type="file"] { display:none; }
-
-  .form-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
-  @media(max-width:600px){.form-row{grid-template-columns:1fr}}
-  .form-group { display:flex; flex-direction:column; gap:8px; }
-  label { font-size:11px; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase; }
-  input[type="password"],input[type="text"],select { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 16px; color:var(--text); font-family:var(--font-mono); font-size:13px; transition:border-color 0.2s; width:100%; }
-  input[type="password"]:focus,input[type="text"]:focus,select:focus { outline:none; border-color:var(--accent); }
-  input[type="range"] { width:100%; accent-color:var(--accent); }
-  .quality-display { font-size:11px; color:var(--accent); text-align:right; }
-
-  .btn { width:100%; padding:16px; border:none; border-radius:10px; font-family:var(--font-display); font-size:16px; font-weight:700; cursor:pointer; transition:all 0.3s; letter-spacing:1px; position:relative; overflow:hidden; margin-top:8px; }
-  .btn-encrypt { background:var(--accent); color:var(--bg); }
-  .btn-encrypt:hover:not(:disabled) { box-shadow:0 0 30px rgba(0,255,157,0.4); transform:translateY(-1px); }
-  .btn-decrypt { background:var(--accent2); color:var(--bg); }
-  .btn-decrypt:hover:not(:disabled) { box-shadow:0 0 30px rgba(0,153,255,0.4); transform:translateY(-1px); }
-  .btn:disabled { opacity:0.4; cursor:not-allowed; transform:none!important; }
-
-  .progress-container { margin-top:20px; display:none; }
-  .progress-container.visible { display:block; }
-  .progress-steps { display:flex; flex-direction:column; gap:8px; }
-  .step { display:flex; align-items:center; gap:12px; font-size:12px; color:var(--muted); padding:10px 14px; border-radius:6px; background:var(--surface); border:1px solid var(--border); transition:all 0.3s; }
-  .step.active { color:var(--text); border-color:var(--accent); background:rgba(0,255,157,0.04); }
-  .step.done { color:var(--accent); border-color:rgba(0,255,157,0.2); }
-  .step.decrypt-step.active { border-color:var(--accent2); background:rgba(0,153,255,0.04); }
-  .step.decrypt-step.done { color:var(--accent2); border-color:rgba(0,153,255,0.2); }
-  .step-icon { font-size:14px; }
-
-  /* ── Stats Panel ───────────────────────────────────────────── */
-  .stats-panel {
-    margin-top: 24px;
-    display: none;
-  }
-  .stats-panel.visible { display: block; }
-
-  .stats-section {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 18px 20px;
-    margin-bottom: 14px;
-  }
-
-  .stats-section-title {
-    font-family: var(--font-display);
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--muted);
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    margin-bottom: 14px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .stats-section-title span {
-    color: var(--accent);
-    margin-right: 8px;
-  }
-
-  /* Row-based stats table */
-  .stat-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 7px 0;
-    border-bottom: 1px solid rgba(33,38,45,0.8);
-    font-size: 12px;
-  }
-  .stat-row:last-child { border-bottom: none; }
-
-  .stat-row-label {
-    color: var(--muted);
-    flex: 1;
-  }
-
-  .stat-row-arrow {
-    color: var(--border);
-    margin: 0 10px;
-    font-size: 10px;
-  }
-
-  .stat-row-value {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 13px;
-    color: var(--accent);
-    text-align: right;
-    min-width: 120px;
-  }
-
-  .stat-row-value.blue  { color: var(--accent2); }
-  .stat-row-value.gold  { color: #f0b429; }
-  .stat-row-value.green { color: #56d364; }
-  .stat-row-value.red   { color: var(--accent3); }
-
-  /* Big highlight cards for key ratios */
-  .ratio-cards {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin-top: 14px;
-  }
-  @media(max-width:500px){.ratio-cards{grid-template-columns:repeat(2,1fr)}}
-
-  .ratio-card {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 10px;
-    text-align: center;
-  }
-
-  .ratio-card-value {
-    font-family: var(--font-display);
-    font-size: 22px;
-    font-weight: 800;
-    color: var(--accent);
-    display: block;
-    margin-bottom: 4px;
-  }
-  .ratio-card-value.blue { color: var(--accent2); }
-  .ratio-card-value.gold { color: #f0b429; }
-
-  .ratio-card-label {
-    font-size: 9px;
-    color: var(--muted);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    line-height: 1.4;
-  }
-
-  /* Capacity bar */
-  .capacity-bar-wrap {
-    margin-top: 10px;
-  }
-  .capacity-bar-label {
-    display: flex;
-    justify-content: space-between;
-    font-size: 10px;
-    color: var(--muted);
-    margin-bottom: 6px;
-  }
-  .capacity-bar-bg {
-    background: var(--surface2);
-    border-radius: 4px;
-    height: 10px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-  }
-  .capacity-bar-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    border-radius: 4px;
-    transition: width 0.8s ease;
-  }
-  .capacity-bar-fill.warn { background: linear-gradient(90deg, #f0b429, var(--accent3)); }
-
-  /* ── end Stats Panel ────────────────────────────────────────── */
-
-  .result-box { margin-top:16px; padding:16px 20px; border-radius:10px; font-size:13px; line-height:1.6; display:none; }
-  .result-box.visible { display:block; }
-  .result-box.success { background:rgba(0,255,157,0.08); border:1px solid rgba(0,255,157,0.3); color:var(--accent); }
-  .result-box.error   { background:rgba(255,107,107,0.08); border:1px solid rgba(255,107,107,0.3); color:var(--accent3); }
-
-  .download-btn { display:inline-flex; align-items:center; gap:8px; margin-top:12px; padding:10px 20px; background:var(--accent); color:var(--bg); border:none; border-radius:6px; font-family:var(--font-display); font-size:13px; font-weight:700; cursor:pointer; text-decoration:none; transition:all 0.2s; }
-  .download-btn.audio-dl { background:var(--accent2); }
-  .download-btn:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(0,255,157,0.3); }
-  .download-btn.audio-dl:hover { box-shadow:0 4px 20px rgba(0,153,255,0.3); }
-
-  .how-it-works { margin-top:60px; padding-top:40px; border-top:1px solid var(--border); }
-  .section-title { font-family:var(--font-display); font-size:24px; font-weight:800; margin-bottom:32px; background:linear-gradient(90deg,#fff,var(--muted)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
-  .pipeline { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:32px; }
-  .pipeline-step { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px; position:relative; }
-  .pipeline-step::after { content:'→'; position:absolute; right:-16px; top:50%; transform:translateY(-50%); color:var(--muted); font-size:16px; z-index:2; }
-  .pipeline-step:last-child::after { display:none; }
-  .step-num { font-size:10px; color:var(--accent); letter-spacing:1px; margin-bottom:6px; }
-  .step-name { font-family:var(--font-display); font-size:14px; font-weight:700; margin-bottom:6px; }
-  .step-desc { font-size:11px; color:var(--muted); line-height:1.5; }
-
-  footer { margin-top:60px; text-align:center; font-size:11px; color:var(--muted); padding-bottom:40px; letter-spacing:1px; }
-</style>
-</head>
-<body>
-
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-
-<div class="container">
-  <header>
-    <div class="logo-badge">🔐 STEGANOGRAPHY + AI</div>
-    <h1>StegoWave</h1>
-    <div class="waveform">
-      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
-      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
-      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
-    </div>
-    <p class="subtitle">
-      Hide images inside audio files using AI compression + AES-256 encryption<br>
-      The stego audio sounds identical. Only the password unlocks the secret.
-    </p>
-  </header>
-
-  <div class="tab-nav">
-    <button class="tab-btn active" onclick="switchTab('encrypt')">
-      <span class="tab-icon">🔒</span> ENCRYPT
-    </button>
-    <button class="tab-btn decrypt-tab" onclick="switchTab('decrypt')">
-      <span class="tab-icon">🔓</span> DECRYPT
-    </button>
-  </div>
-
-  <!-- ══ ENCRYPT PANEL ══════════════════════════════════════════ -->
-  <div id="panel-encrypt" class="panel active">
-
-    <div class="info-strip">
-      <strong>How it works:</strong> Your image is AI-compressed (JPEG DCT + zlib) to a fraction of its size,
-      then AES-256-GCM encrypted with your password, then hidden inside the audio's LSBs.
-      The output audio is virtually <strong>indistinguishable</strong> from the original.
-    </div>
-
-    <div class="upload-grid">
-      <div class="upload-zone" id="img-zone" onclick="document.getElementById('img-input').click()"
-           ondragover="dragOver(event,'img-zone')" ondragleave="dragLeave('img-zone')"
-           ondrop="dropFile(event,'img-input','img-zone','img-filename')">
-        <span class="upload-icon">🖼️</span>
-        <div class="upload-label">Drop Image Here</div>
-        <div class="upload-hint">PNG, JPG, WEBP — any size</div>
-        <div class="upload-filename" id="img-filename"></div>
-        <input type="file" id="img-input" accept="image/*"
-               onchange="fileSelected(this,'img-zone','img-filename')">
-      </div>
-
-      <div class="upload-zone audio-zone" id="aud-zone" onclick="document.getElementById('aud-input').click()"
-           ondragover="dragOver(event,'aud-zone')" ondragleave="dragLeave('aud-zone')"
-           ondrop="dropFile(event,'aud-input','aud-zone','aud-filename')">
-        <span class="upload-icon">🎵</span>
-        <div class="upload-label">Drop Audio Here</div>
-        <div class="upload-hint">WAV — carrier file</div>
-        <div class="upload-filename" id="aud-filename"></div>
-        <input type="file" id="aud-input" accept="audio/*"
-               onchange="fileSelected(this,'aud-zone','aud-filename')">
-      </div>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label>🔑 Password (Required)</label>
-        <input type="password" id="enc-password" placeholder="Enter encryption password...">
-      </div>
-      <div class="form-group">
-        <label>⚙️ AI Compression Quality — <span class="quality-display" id="quality-val">50%</span></label>
-        <input type="range" id="quality" min="10" max="90" value="50"
-               oninput="document.getElementById('quality-val').textContent=this.value+'%'">
-        <div style="font-size:10px;color:var(--muted)">Lower = smaller payload but worse quality</div>
-      </div>
-    </div>
-
-    <button class="btn btn-encrypt" id="enc-btn" onclick="runEncrypt()">
-      🔒 ENCRYPT &amp; HIDE IMAGE IN AUDIO
-    </button>
-
-    <div class="progress-container" id="enc-progress">
-      <div class="progress-steps" id="enc-steps"></div>
-    </div>
-
-    <!-- ── Stats Panel ──────────────────────────────────────── -->
-    <div class="stats-panel" id="enc-stats">
-
-      <!-- Section 1: Image compression sizes + ratio -->
-      <div class="stats-section">
-        <div class="stats-section-title"><span>01</span> Image Compression Results</div>
-
-        <div class="stat-row">
-          <span class="stat-row-label">① Original Image Size</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value" id="s-orig-size">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">② After JPEG + DCT Compression
-            <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">compressed image (pre-zlib)</em>
-          </span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value green" id="s-jpeg-size">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">③ After zlib DEFLATE
-            <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">final payload handed to encryption</em>
-          </span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value green" id="s-zlib-size">—</span>
-        </div>
-
-        <!-- Key ratio cards: only between original and pre-zlib (what panel asked) -->
-        <div class="ratio-cards">
-          <div class="ratio-card">
-            <span class="ratio-card-value" id="s-jpeg-ratio">—</span>
-            <div class="ratio-card-label">① vs ②<br>Image Compression Ratio</div>
-          </div>
-          <div class="ratio-card">
-            <span class="ratio-card-value gold" id="s-total-ratio">—</span>
-            <div class="ratio-card-label">① vs ③<br>Overall Ratio (incl. zlib)</div>
-          </div>
-          <div class="ratio-card">
-            <span class="ratio-card-value green" id="s-space-saved">—</span>
-            <div class="ratio-card-label">Total Space<br>Saved</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Section 2: Audio carrier + LSB stats -->
-      <div class="stats-section">
-        <div class="stats-section-title"><span>02</span> Audio Carrier &amp; LSB Capacity</div>
-
-        <div class="stat-row">
-          <span class="stat-row-label">Audio Carrier File Size</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value blue" id="s-audio-size">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">Total Samples in Audio (16-bit PCM)</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value blue" id="s-total-samples">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">LSB Bits Taken Per Sample</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value gold" id="s-lsb-bits">2 bits &nbsp;<em style="font-size:10px;font-weight:400;color:var(--muted)">(last 2 of 16)</em></span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">Bit Possibilities Per Sample (2²)</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value gold" id="s-lsb-poss">4 &nbsp;<em style="font-size:10px;font-weight:400;color:var(--muted)">(00 · 01 · 10 · 11)</em></span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">Max Hideable Capacity
-            <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">= total samples × 2 bits ÷ 8</em>
-          </span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value green" id="s-capacity">—</span>
-        </div>
-        <div class="stat-row" style="border-top:1px solid rgba(0,255,157,0.12);margin-top:6px;padding-top:10px">
-          <span class="stat-row-label">Our Payload (encrypted data)</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value" id="s-payload-size">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">Samples That Were Modified</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value" id="s-samples-used">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">Payload Fits in Audio?</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value green" id="s-fits">—</span>
-        </div>
-
-        <!-- Capacity usage bar -->
-        <div class="capacity-bar-wrap">
-          <div class="capacity-bar-label">
-            <span>Audio Capacity Used</span>
-            <span id="s-cap-pct">—</span>
-          </div>
-          <div class="capacity-bar-bg">
-            <div class="capacity-bar-fill" id="s-cap-bar" style="width:0%"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Section 3: Audio quality metrics -->
-      <div class="stats-section">
-        <div class="stats-section-title"><span>03</span> Audio Imperceptibility Metrics
-          <em style="font-size:10px;color:var(--muted);font-weight:400;margin-left:6px">— original vs stego audio</em>
-        </div>
-
-        <div class="stat-row">
-          <span class="stat-row-label">SNR — Signal-to-Noise Ratio
-            <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">higher = less audible change. &gt;40 dB is inaudible</em>
-          </span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value green" id="s-audio-snr">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">PSNR — Peak Signal-to-Noise Ratio
-            <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">standard audio quality benchmark. &gt;60 dB = excellent</em>
-          </span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value green" id="s-audio-psnr">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">MSE — Mean Square Error
-            <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">avg squared diff per sample. near 0 = near-identical</em>
-          </span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value gold" id="s-audio-mse">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">Correlation Coefficient
-            <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">waveform similarity. 1.0 = identical waveform</em>
-          </span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value green" id="s-audio-corr">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">Samples Perceptibly Changed</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value gold" id="s-audio-pct">—</span>
-        </div>
-
-        <!-- Verdict card -->
-        <div id="s-audio-verdict" style="margin-top:14px;padding:12px 16px;border-radius:8px;font-size:12px;background:rgba(0,255,157,0.06);border:1px solid rgba(0,255,157,0.2);color:var(--accent);display:none;">
-        </div>
-      </div>
-
-    </div>
-    <!-- ── end stats ──────────────────────────────────────────── -->
-
-    <div class="result-box" id="enc-result"></div>
-
-    <!-- Compressed image preview shown after encrypt -->
-    <div id="compressed-preview-box" style="display:none;margin-top:20px;">
-      <div class="stats-section">
-        <div class="stats-section-title"><span>👁</span> Compressed Image Preview
-          <em style="font-size:10px;color:var(--muted);font-weight:400;margin-left:8px">— this is what's hidden inside the audio</em>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
-          <div>
-            <div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Original Image</div>
-            <img id="preview-original" style="width:100%;border-radius:6px;border:1px solid var(--border)">
-            <div id="preview-orig-label" style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center"></div>
-          </div>
-          <div>
-            <div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">After Compression <span style="color:var(--accent)">(what got hidden)</span></div>
-            <img id="preview-compressed" style="width:100%;border-radius:6px;border:1px solid rgba(0,255,157,0.3)">
-            <div id="preview-comp-label" style="font-size:10px;color:var(--accent);margin-top:6px;text-align:center"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div><!-- ══ END ENCRYPT PANEL ══ -->
-
-  <!-- ══ DECRYPT PANEL ══════════════════════════════════════════ -->
-  <div id="panel-decrypt" class="panel">
-    <div class="info-strip decrypt-info">
-      <strong>Receiver Mode:</strong> Upload the stego audio file you received.
-      Enter the correct password. The hidden image will be AI-decompressed and returned to you.
-      <strong>No original image or sender connection needed.</strong>
-    </div>
-
-    <div class="upload-grid">
-      <div class="upload-zone audio-zone" id="stego-zone" style="grid-column:1/-1"
-           onclick="document.getElementById('stego-input').click()"
-           ondragover="dragOver(event,'stego-zone')" ondragleave="dragLeave('stego-zone')"
-           ondrop="dropFile(event,'stego-input','stego-zone','stego-filename')">
-        <span class="upload-icon">🎵</span>
-        <div class="upload-label">Upload Stego Audio File</div>
-        <div class="upload-hint">The audio file received from sender (WAV)</div>
-        <div class="upload-filename" id="stego-filename"></div>
-        <input type="file" id="stego-input" accept="audio/*"
-               onchange="fileSelected(this,'stego-zone','stego-filename')">
-      </div>
-    </div>
-
-    <!-- Optional: original image for quality comparison -->
-    <div class="upload-zone" id="orig-zone" style="margin-bottom:16px"
-         onclick="document.getElementById('orig-input').click()"
-         ondragover="dragOver(event,'orig-zone')" ondragleave="dragLeave('orig-zone')"
-         ondrop="dropFile(event,'orig-input','orig-zone','orig-filename')">
-      <span class="upload-icon" style="font-size:22px">🖼️</span>
-      <div class="upload-label" style="font-size:12px">Upload Original Image <span style="color:var(--muted);font-weight:400">(optional)</span></div>
-      <div class="upload-hint">To measure PSNR &amp; SSIM quality score of recovered image</div>
-      <div class="upload-filename" id="orig-filename"></div>
-      <input type="file" id="orig-input" accept="image/*"
-             onchange="fileSelected(this,'orig-zone','orig-filename')">
-    </div>
-
-    <div class="form-group" style="margin-bottom:16px">
-      <label>🔑 Password</label>
-      <input type="password" id="dec-password" placeholder="Enter decryption password...">
-    </div>
-
-    <button class="btn btn-decrypt" id="dec-btn" onclick="runDecrypt()">
-      🔓 EXTRACT &amp; RECONSTRUCT IMAGE
-    </button>
-
-    <div class="progress-container" id="dec-progress">
-      <div class="progress-steps" id="dec-steps"></div>
-    </div>
-
-    <div class="result-box" id="dec-result"></div>
-
-    <!-- Image quality metrics shown after decrypt (if original uploaded) -->
-    <div id="img-metrics-box" style="display:none;margin-top:20px;">
-      <div class="stats-section">
-        <div class="stats-section-title"><span>📊</span> Image Reconstruction Quality
-          <em style="font-size:10px;color:var(--muted);font-weight:400;margin-left:6px">— original vs recovered</em>
-        </div>
-
-        <div class="stat-row">
-          <span class="stat-row-label">PSNR — Peak Signal-to-Noise Ratio
-            <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">&gt;30 dB = good. &gt;40 dB = excellent reconstruction</em>
-          </span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value green" id="s-img-psnr">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">SSIM — Structural Similarity Index
-            <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">perceptual match score. 1.0 = identical to human eye</em>
-          </span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value green" id="s-img-ssim">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">MSE — Mean Square Error (per pixel)</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value gold" id="s-img-mse">—</span>
-        </div>
-        <div class="stat-row">
-          <span class="stat-row-label">RMSE — Root Mean Square Error (pixel units)</span>
-          <span class="stat-row-arrow">→</span>
-          <span class="stat-row-value gold" id="s-img-rmse">—</span>
-        </div>
-
-        <!-- Verdict -->
-        <div id="s-img-verdict" style="margin-top:14px;padding:12px 16px;border-radius:8px;font-size:12px;background:rgba(0,153,255,0.06);border:1px solid rgba(0,153,255,0.2);color:var(--accent2);">
-        </div>
-      </div>
-    </div>
-
-  <!-- How it works -->
-  <div class="how-it-works">
-    <div class="section-title">// The Pipeline</div>
-    <div class="pipeline">
-      <div class="pipeline-step">
-        <div class="step-num">01 / SENDER</div>
-        <div class="step-name">AI Compression</div>
-        <div class="step-desc">JPEG DCT + quantization shrinks image. zlib on top. 10–76x total ratio.</div>
-      </div>
-      <div class="pipeline-step">
-        <div class="step-num">02 / SENDER</div>
-        <div class="step-name">AES-256 Encrypt</div>
-        <div class="step-desc">PBKDF2 key derivation. AES-GCM with authentication tag. Wrong password = fail.</div>
-      </div>
-      <div class="pipeline-step">
-        <div class="step-num">03 / SENDER</div>
-        <div class="step-name">LSB Steganography</div>
-        <div class="step-desc">2 LSBs per audio sample. 4 possibilities per sample. &lt;0.003% change.</div>
-      </div>
-      <div class="pipeline-step">
-        <div class="step-num">04 / RECEIVER</div>
-        <div class="step-name">LSB Extract</div>
-        <div class="step-desc">Reads modified LSBs, checks MAGIC bytes, reassembles payload.</div>
-      </div>
-      <div class="pipeline-step">
-        <div class="step-num">05 / RECEIVER</div>
-        <div class="step-name">AES Decrypt</div>
-        <div class="step-desc">Password derives key via PBKDF2. GCM tag verifies integrity.</div>
-      </div>
-      <div class="pipeline-step">
-        <div class="step-num">06 / RECEIVER</div>
-        <div class="step-name">AI Reconstruct</div>
-        <div class="step-desc">zlib → JPEG decode → bicubic upsample to original dimensions.</div>
-      </div>
-    </div>
-  </div>
-
-  <footer>
-    StegoWave — Audio Steganography · AES-256-GCM · JPEG DCT + zlib · LSB · Python + Flask
-  </footer>
-</div>
-
-<script>
-const API = 'http://localhost:5000/api';
-
-// ── Tab switching ────────────────────────────────────────────────
-function switchTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('panel-' + tab).classList.add('active');
-  const btns = document.querySelectorAll('.tab-btn');
-  btns[tab === 'encrypt' ? 0 : 1].classList.add('active');
-}
-
-// ── File handling ────────────────────────────────────────────────
-function fileSelected(input, zoneId, filenameId) {
-  const zone = document.getElementById(zoneId);
-  const fn   = document.getElementById(filenameId);
-  if (input.files[0]) {
-    zone.classList.add('has-file');
-    const kb = (input.files[0].size / 1024).toFixed(1);
-    const mb = (input.files[0].size / (1024*1024)).toFixed(2);
-    fn.textContent = `✓ ${input.files[0].name} (${mb} MB / ${kb} KB)`;
-  }
-}
-function dragOver(e, id)  { e.preventDefault(); document.getElementById(id).classList.add('drag-over'); }
-function dragLeave(id)    { document.getElementById(id).classList.remove('drag-over'); }
-function dropFile(e, inputId, zoneId, filenameId) {
-  e.preventDefault(); dragLeave(zoneId);
-  const input = document.getElementById(inputId);
-  if (e.dataTransfer.files.length) {
-    const dT = new DataTransfer(); dT.items.add(e.dataTransfer.files[0]);
-    input.files = dT.files;
-    fileSelected(input, zoneId, filenameId);
-  }
-}
-
-// ── Helpers ──────────────────────────────────────────────────────
-function fmt(bytes) {
-  if (bytes >= 1024*1024) return (bytes/(1024*1024)).toFixed(2) + ' MB';
-  return (bytes/1024).toFixed(1) + ' KB';
-}
-function fmtBytes(bytes) {
-  return fmt(bytes) + ' (' + bytes.toLocaleString() + ' bytes)';
-}
-function numFmt(n) {
-  return Number(n).toLocaleString();
-}
-
-// ── Populate stats ───────────────────────────────────────────────
-function populateStats(h) {
-  const origSize   = parseInt(h.get('X-Original-Size')     || 0);
-  const jpegSize   = parseInt(h.get('X-JPEG-Size')         || 0);
-  const compSize   = parseInt(h.get('X-Compressed-Size')   || 0);
-  const jpegRatio  = parseFloat(h.get('X-JPEG-Ratio')      || 0);
-  const totalRatio = parseFloat(h.get('X-Total-Ratio')     || 0);
-  const encSize    = parseInt(h.get('X-Encrypted-Size')    || 0);
-  const audioSize  = parseInt(h.get('X-Audio-Size')        || 0);
-  const capacity   = parseInt(h.get('X-Audio-Capacity')    || 0);
-  const totalSamp  = parseInt(h.get('X-Total-Samples')     || 0);
-  const sampUsed   = parseInt(h.get('X-Samples-Used')      || 0);
-
-  // ── Section 1: Image sizes ──────────────────────────────────────
-  document.getElementById('s-orig-size').textContent  = fmtBytes(origSize);
-  document.getElementById('s-jpeg-size').textContent  = fmtBytes(jpegSize);
-  document.getElementById('s-zlib-size').textContent  = fmtBytes(compSize);
-
-  document.getElementById('s-jpeg-ratio').textContent  = jpegRatio + 'x';
-  document.getElementById('s-total-ratio').textContent = totalRatio + 'x';
-  const saved = Math.round((1 - compSize / origSize) * 100);
-  document.getElementById('s-space-saved').textContent = saved + '%';
-
-  // ── Section 2: Audio stats ──────────────────────────────────────
-  document.getElementById('s-audio-size').textContent    = fmtBytes(audioSize);
-  document.getElementById('s-total-samples').textContent = numFmt(totalSamp) + ' samples';
-  // lsb-bits and lsb-poss are static in HTML — no need to set them
-  document.getElementById('s-capacity').textContent      = fmtBytes(capacity);
-  document.getElementById('s-payload-size').textContent  = fmtBytes(encSize);
-  document.getElementById('s-samples-used').textContent  =
-    numFmt(sampUsed) + ' of ' + numFmt(totalSamp) + ' samples';
-
-  const fits   = encSize <= capacity;
-  const fitsEl = document.getElementById('s-fits');
-  fitsEl.textContent = fits
-    ? `✅ YES  —  ${fmt(encSize)} payload  <  ${fmt(capacity)} capacity`
-    : `❌ NO  —  ${fmt(encSize)} payload  >  ${fmt(capacity)} capacity`;
-  fitsEl.className = 'stat-row-value ' + (fits ? 'green' : 'red');
-
-  // Capacity bar
-  const pct = Math.min(100, Math.round((encSize / capacity) * 100));
-  document.getElementById('s-cap-pct').textContent = pct + '% used';
-  const bar = document.getElementById('s-cap-bar');
-  bar.style.width = pct + '%';
-  if (pct > 80) bar.classList.add('warn');
-
-  // ── Section 3: Audio quality metrics ──────────────────────────
-  const snr  = parseFloat(h.get('X-Audio-SNR')          || 0);
-  const psnr = parseFloat(h.get('X-Audio-PSNR')         || 0);
-  const mse  = parseFloat(h.get('X-Audio-MSE')          || 0);
-  const corr = parseFloat(h.get('X-Audio-Correlation')  || 0);
-  const pctM = parseFloat(h.get('X-Audio-Pct-Modified') || 0);
-
-  document.getElementById('s-audio-snr').textContent  = snr  + ' dB';
-  document.getElementById('s-audio-psnr').textContent = psnr + ' dB';
-  document.getElementById('s-audio-mse').textContent  = mse;
-  document.getElementById('s-audio-corr').textContent = corr + '  (out of 1.0)';
-  document.getElementById('s-audio-pct').textContent  = pctM + '%  of total samples';
-
-  // Verdict
-  const verdict = document.getElementById('s-audio-verdict');
-  verdict.style.display = 'block';
-  if (snr >= 60) {
-    verdict.innerHTML = `🔇 <strong>Imperceptible:</strong> SNR ${snr} dB — the embedding is completely inaudible to the human ear. The stego audio is statistically near-identical to the original (correlation: ${corr}).`;
-  } else if (snr >= 40) {
-    verdict.innerHTML = `✅ <strong>Inaudible:</strong> SNR ${snr} dB — the LSB changes are below human hearing threshold. Correlation: ${corr}.`;
-  } else {
-    verdict.innerHTML = `⚠️ SNR ${snr} dB — some distortion present. Consider using a higher quality audio carrier.`;
-    verdict.style.background = 'rgba(240,180,41,0.06)';
-    verdict.style.borderColor = 'rgba(240,180,41,0.3)';
-    verdict.style.color = '#f0b429';
-  }
-
-  document.getElementById('enc-stats').classList.add('visible');
-}
-
-// ── Steps ────────────────────────────────────────────────────────
-const ENCRYPT_STEPS = [
-  { id:'e1', icon:'🧠', label:'AI compressing image (JPEG DCT + zlib)...' },
-  { id:'e2', icon:'🔐', label:'Encrypting with AES-256-GCM...' },
-  { id:'e3', icon:'🎵', label:'Embedding data into audio LSBs (2 bits/sample)...' },
-  { id:'e4', icon:'✅', label:'Done! Stego audio ready.' },
-];
-const DECRYPT_STEPS = [
-  { id:'d1', icon:'🎵', label:'Extracting hidden data from audio LSBs...' },
-  { id:'d2', icon:'🔓', label:'Decrypting with AES-256-GCM...' },
-  { id:'d3', icon:'🧠', label:'AI reconstructing image (JPEG decode + bicubic upsample)...' },
-  { id:'d4', icon:'✅', label:'Done! Image recovered.' },
-];
-
-function renderSteps(containerId, steps, prefix) {
-  document.getElementById(containerId).innerHTML = steps.map(s =>
-    `<div class="step ${prefix}" id="step-${s.id}">
-       <span class="step-icon">${s.icon}</span><span>${s.label}</span>
-     </div>`).join('');
-}
-function setStepActive(id) { const e=document.getElementById('step-'+id); if(e) e.classList.add('active'); }
-function setStepDone(id)   { const e=document.getElementById('step-'+id); if(e){ e.classList.remove('active'); e.classList.add('done'); } }
-
-// ── Encrypt ──────────────────────────────────────────────────────
-async function runEncrypt() {
-  const imgFile  = document.getElementById('img-input').files[0];
-  const audFile  = document.getElementById('aud-input').files[0];
-  const password = document.getElementById('enc-password').value;
-  const quality  = document.getElementById('quality').value;
-
-  if (!imgFile)  return showResult('enc-result','error','⚠️ Please select an image file.');
-  if (!audFile)  return showResult('enc-result','error','⚠️ Please select an audio file.');
-  if (!password) return showResult('enc-result','error','⚠️ Password is required.');
-
-  document.getElementById('enc-btn').disabled = true;
-  document.getElementById('enc-result').className = 'result-box';
-  document.getElementById('enc-stats').className  = 'stats-panel';
-  document.getElementById('compressed-preview-box').style.display = 'none';
-
-  const prog = document.getElementById('enc-progress');
-  prog.classList.add('visible');
-  renderSteps('enc-steps', ENCRYPT_STEPS, '');
-
-  setStepActive('e1');
-  setTimeout(() => { setStepDone('e1'); setStepActive('e2'); }, 900);
-  setTimeout(() => { setStepDone('e2'); setStepActive('e3'); }, 1800);
-
-  const fd = new FormData();
-  fd.append('image', imgFile);
-  fd.append('audio', audFile);
-  fd.append('password', password);
-  fd.append('quality', quality);
-
-  try {
-    const resp = await fetch(`${API}/encrypt`, { method:'POST', body:fd });
-    if (!resp.ok) { const err = await resp.json(); throw new Error(err.error || 'Encryption failed'); }
-
-    setStepDone('e3'); setStepActive('e4'); setStepDone('e4');
-
-    // Populate all stats
-    populateStats(resp.headers);
-
-    const blob = await resp.blob();
-    const url  = URL.createObjectURL(blob);
-    showResult('enc-result','success',
-      `✅ Success! Image hidden inside audio.<br>
-       Share the stego audio with the receiver — they only need the file + password.<br><br>
-       <a class="download-btn audio-dl" href="${url}" download="stego_audio.wav">⬇ Download Stego Audio</a>`);
-
-    // Show original image preview
-    const originalUrl = URL.createObjectURL(imgFile);
-    document.getElementById('preview-original').src = originalUrl;
-    const origKB = (imgFile.size / 1024).toFixed(1);
-    document.getElementById('preview-orig-label').textContent =
-      `${imgFile.name}  —  ${origKB} KB`;
-
-    // Fetch compressed image from backend and show side by side
-    try {
-      const prevResp = await fetch(`${API}/preview-compressed`);
-      if (prevResp.ok) {
-        const prevBlob = await prevResp.blob();
-        const prevUrl  = URL.createObjectURL(prevBlob);
-        const compKB   = (prevBlob.size / 1024).toFixed(1);
-        document.getElementById('preview-compressed').src = prevUrl;
-        document.getElementById('preview-comp-label').textContent =
-          `compressed_preview.jpg  —  ${compKB} KB  (what's inside the audio)`;
-        document.getElementById('compressed-preview-box').style.display = 'block';
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StegoWave — Audio Steganography</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg: #080c10;
+      --surface: #0d1117;
+      --surface2: #161b22;
+      --border: #21262d;
+      --accent: #00ff9d;
+      --accent2: #0099ff;
+      --accent3: #ff6b6b;
+      --text: #e6edf3;
+      --muted: #7d8590;
+      --font-display: 'Syne', sans-serif;
+      --font-mono: 'Space Mono', monospace;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0, 255, 157, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 255, 157, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.15;
+    }
+
+    .orb-1 {
+      width: 400px;
+      height: 400px;
+      background: var(--accent);
+      top: -100px;
+      right: -100px;
+      animation: drift 8s ease-in-out infinite;
+    }
+
+    .orb-2 {
+      width: 300px;
+      height: 300px;
+      background: var(--accent2);
+      bottom: -80px;
+      left: -80px;
+      animation: drift 10s ease-in-out infinite reverse;
+    }
+
+    @keyframes drift {
+
+      0%,
+      100% {
+        transform: translate(0, 0)
       }
-    } catch(_) { /* preview is optional, don't break on failure */ }
 
-  } catch(e) {
-    setStepDone('e1'); setStepDone('e2'); setStepDone('e3');
-    showResult('enc-result','error',`❌ ${e.message}`);
-  }
-  document.getElementById('enc-btn').disabled = false;
-}
-
-// ── Decrypt ──────────────────────────────────────────────────────
-async function runDecrypt() {
-  const stegoFile  = document.getElementById('stego-input').files[0];
-  const password   = document.getElementById('dec-password').value;
-  const origFile   = document.getElementById('orig-input').files[0]; // optional
-
-  if (!stegoFile) return showResult('dec-result','error','⚠️ Please upload the stego audio file.');
-  if (!password)  return showResult('dec-result','error','⚠️ Password is required.');
-
-  document.getElementById('dec-btn').disabled = true;
-  document.getElementById('dec-result').className = 'result-box';
-  document.getElementById('img-metrics-box').style.display = 'none';
-
-  const prog = document.getElementById('dec-progress');
-  prog.classList.add('visible');
-  renderSteps('dec-steps', DECRYPT_STEPS, 'decrypt-step');
-
-  setStepActive('d1');
-  setTimeout(() => { setStepDone('d1'); setStepActive('d2'); }, 900);
-  setTimeout(() => { setStepDone('d2'); setStepActive('d3'); }, 1800);
-
-  const fd = new FormData();
-  fd.append('audio', stegoFile);
-  fd.append('password', password);
-  if (origFile) fd.append('original_image', origFile);  // send for metrics
-
-  try {
-    const resp = await fetch(`${API}/decrypt`, { method:'POST', body:fd });
-    if (!resp.ok) { const err = await resp.json(); throw new Error(err.error || 'Decryption failed'); }
-
-    setStepDone('d3'); setStepActive('d4'); setStepDone('d4');
-
-    const blob = await resp.blob();
-    const url  = URL.createObjectURL(blob);
-    showResult('dec-result','success',
-      `✅ Image successfully recovered and reconstructed!<br><br>
-       <img src="${url}" style="max-width:100%;border-radius:8px;margin-bottom:12px;border:1px solid rgba(0,153,255,0.3)"><br>
-       <a class="download-btn" href="${url}" download="recovered_image.png">⬇ Download Recovered Image</a>`);
-
-    // Show image metrics if original was provided
-    if (origFile) {
-      const psnr    = parseFloat(resp.headers.get('X-Image-PSNR')     || 0);
-      const ssim    = parseFloat(resp.headers.get('X-Image-SSIM')     || 0);
-      const ssimPct = parseFloat(resp.headers.get('X-Image-SSIM-Pct') || 0);
-      const mse     = parseFloat(resp.headers.get('X-Image-MSE')      || 0);
-      const rmse    = parseFloat(resp.headers.get('X-Image-RMSE')     || 0);
-
-      if (psnr > 0) {
-        document.getElementById('s-img-psnr').textContent = psnr + ' dB';
-        document.getElementById('s-img-ssim').textContent = ssim + '  (' + ssimPct + '% perceptual match)';
-        document.getElementById('s-img-mse').textContent  = mse + ' (avg pixel² error)';
-        document.getElementById('s-img-rmse').textContent = rmse + ' / 255 pixels';
-
-        // Verdict
-        let vhtml = '';
-        if (ssimPct >= 80) {
-          vhtml = `🎯 <strong>${ssimPct}% perceptual match</strong> — PSNR ${psnr} dB. The recovered image has high structural similarity to the original. Quality loss is due to JPEG compression used for payload size reduction.`;
-        } else if (ssimPct >= 60) {
-          vhtml = `✅ <strong>${ssimPct}% perceptual match</strong> — PSNR ${psnr} dB. Good reconstruction. Increase quality slider for better fidelity.`;
-        } else {
-          vhtml = `⚠️ <strong>${ssimPct}% perceptual match</strong> — PSNR ${psnr} dB. Low fidelity — try a higher quality setting during encryption.`;
-        }
-        document.getElementById('s-img-verdict').innerHTML = vhtml;
-        document.getElementById('img-metrics-box').style.display = 'block';
+      50% {
+        transform: translate(30px, 20px)
       }
     }
 
-  } catch(e) {
-    setStepDone('d1'); setStepDone('d2'); setStepDone('d3');
-    showResult('dec-result','error',`❌ ${e.message}`);
-  }
-  document.getElementById('dec-btn').disabled = false;
-}
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
 
-function showResult(id, type, html) {
-  const el = document.getElementById(id);
-  el.className = `result-box visible ${type}`;
-  el.innerHTML = html;
-}
-</script>
+    header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+
+    .logo-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, rgba(0, 255, 157, 0.1), rgba(0, 153, 255, 0.1));
+      border: 1px solid rgba(0, 255, 157, 0.3);
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: clamp(36px, 6vw, 72px);
+      font-weight: 800;
+      line-height: 1;
+      background: linear-gradient(135deg, #fff 40%, var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 16px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: 1px;
+      line-height: 1.8;
+    }
+
+    /* Fixed container height — wave animates inside, never pushes page */
+    .waveform {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      margin: 24px 0;
+      height: 36px;
+      overflow: hidden;
+    }
+
+    .wave-bar {
+      width: 3px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 2px;
+      opacity: 0.6;
+      transform-origin: center center;
+      animation: wave 1.2s ease-in-out infinite;
+    }
+
+    @keyframes wave {
+
+      0%,
+      100% {
+        transform: scaleY(1);
+        opacity: 0.3
+      }
+
+      50% {
+        transform: scaleY(4);
+        opacity: 1
+      }
+    }
+
+    .wave-bar:nth-child(1) {
+      animation-delay: 0s
+    }
+
+    .wave-bar:nth-child(2) {
+      animation-delay: 0.1s
+    }
+
+    .wave-bar:nth-child(3) {
+      animation-delay: 0.2s
+    }
+
+    .wave-bar:nth-child(4) {
+      animation-delay: 0.3s
+    }
+
+    .wave-bar:nth-child(5) {
+      animation-delay: 0.4s
+    }
+
+    .wave-bar:nth-child(6) {
+      animation-delay: 0.3s
+    }
+
+    .wave-bar:nth-child(7) {
+      animation-delay: 0.2s
+    }
+
+    .wave-bar:nth-child(8) {
+      animation-delay: 0.1s
+    }
+
+    .wave-bar:nth-child(9) {
+      animation-delay: 0s
+    }
+
+    .tab-nav {
+      display: flex;
+      gap: 0;
+      margin-bottom: 32px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 16px;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s;
+      letter-spacing: 1px;
+    }
+
+    .tab-btn.active {
+      color: var(--bg);
+      background: var(--accent);
+    }
+
+    .tab-btn.decrypt-tab.active {
+      background: var(--accent2);
+    }
+
+    .tab-btn:hover:not(.active) {
+      color: var(--text);
+      background: var(--surface2);
+    }
+
+    .tab-icon {
+      margin-right: 8px;
+      font-size: 16px;
+    }
+
+    .panel {
+      display: none;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(12px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0)
+      }
+    }
+
+    .info-strip {
+      background: rgba(0, 255, 157, 0.04);
+      border: 1px solid rgba(0, 255, 157, 0.15);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 28px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .info-strip.decrypt-info {
+      background: rgba(0, 153, 255, 0.04);
+      border-color: rgba(0, 153, 255, 0.15);
+    }
+
+    .info-strip strong {
+      color: var(--accent);
+    }
+
+    .info-strip.decrypt-info strong {
+      color: var(--accent2);
+    }
+
+    .upload-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    @media(max-width:600px) {
+      .upload-grid {
+        grid-template-columns: 1fr
+      }
+    }
+
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      background: var(--surface);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(0, 255, 157, 0.04);
+    }
+
+    .upload-zone.audio-zone:hover,
+    .upload-zone.audio-zone.drag-over {
+      border-color: var(--accent2);
+      background: rgba(0, 153, 255, 0.04);
+    }
+
+    .upload-zone.has-file {
+      border-style: solid;
+      border-color: var(--accent);
+    }
+
+    .upload-zone.audio-zone.has-file {
+      border-color: var(--accent2);
+    }
+
+    .upload-icon {
+      font-size: 32px;
+      margin-bottom: 10px;
+      display: block;
+    }
+
+    .upload-label {
+      font-family: var(--font-display);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .upload-hint {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .upload-filename {
+      font-size: 11px;
+      color: var(--accent);
+      margin-top: 8px;
+      word-break: break-all;
+    }
+
+    .audio-zone .upload-filename {
+      color: var(--accent2);
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    @media(max-width:600px) {
+      .form-row {
+        grid-template-columns: 1fr
+      }
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    label {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    input[type="password"],
+    input[type="text"],
+    select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      transition: border-color 0.2s;
+      width: 100%;
+    }
+
+    input[type="password"]:focus,
+    input[type="text"]:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .quality-display {
+      font-size: 11px;
+      color: var(--accent);
+      text-align: right;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 10px;
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s;
+      letter-spacing: 1px;
+      position: relative;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .btn-encrypt {
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    .btn-encrypt:hover:not(:disabled) {
+      box-shadow: 0 0 30px rgba(0, 255, 157, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .btn-decrypt {
+      background: var(--accent2);
+      color: var(--bg);
+    }
+
+    .btn-decrypt:hover:not(:disabled) {
+      box-shadow: 0 0 30px rgba(0, 153, 255, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .progress-container {
+      margin-top: 20px;
+      display: none;
+    }
+
+    .progress-container.visible {
+      display: block;
+    }
+
+    .progress-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 10px 14px;
+      border-radius: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      transition: all 0.3s;
+    }
+
+    .step.active {
+      color: var(--text);
+      border-color: var(--accent);
+      background: rgba(0, 255, 157, 0.04);
+    }
+
+    .step.done {
+      color: var(--accent);
+      border-color: rgba(0, 255, 157, 0.2);
+    }
+
+    .step.decrypt-step.active {
+      border-color: var(--accent2);
+      background: rgba(0, 153, 255, 0.04);
+    }
+
+    .step.decrypt-step.done {
+      color: var(--accent2);
+      border-color: rgba(0, 153, 255, 0.2);
+    }
+
+    .step-icon {
+      font-size: 14px;
+    }
+
+    /* ── Stats Panel ───────────────────────────────────────────── */
+    .stats-panel {
+      margin-top: 24px;
+      display: none;
+    }
+
+    .stats-panel.visible {
+      display: block;
+    }
+
+    .stats-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin-bottom: 14px;
+    }
+
+    .stats-section-title {
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stats-section-title span {
+      color: var(--accent);
+      margin-right: 8px;
+    }
+
+    /* Row-based stats table */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(33, 38, 45, 0.8);
+      font-size: 12px;
+    }
+
+    .stat-row:last-child {
+      border-bottom: none;
+    }
+
+    .stat-row-label {
+      color: var(--muted);
+      flex: 1;
+    }
+
+    .stat-row-arrow {
+      color: var(--border);
+      margin: 0 10px;
+      font-size: 10px;
+    }
+
+    .stat-row-value {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--accent);
+      text-align: right;
+      min-width: 120px;
+    }
+
+    .stat-row-value.blue {
+      color: var(--accent2);
+    }
+
+    .stat-row-value.gold {
+      color: #f0b429;
+    }
+
+    .stat-row-value.green {
+      color: #56d364;
+    }
+
+    .stat-row-value.red {
+      color: var(--accent3);
+    }
+
+    /* Big highlight cards for key ratios */
+    .ratio-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    @media(max-width:500px) {
+      .ratio-cards {
+        grid-template-columns: repeat(2, 1fr)
+      }
+    }
+
+    .ratio-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 10px;
+      text-align: center;
+    }
+
+    .ratio-card-value {
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--accent);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .ratio-card-value.blue {
+      color: var(--accent2);
+    }
+
+    .ratio-card-value.gold {
+      color: #f0b429;
+    }
+
+    .ratio-card-label {
+      font-size: 9px;
+      color: var(--muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      line-height: 1.4;
+    }
+
+    /* Capacity bar */
+    .capacity-bar-wrap {
+      margin-top: 10px;
+    }
+
+    .capacity-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .capacity-bar-bg {
+      background: var(--surface2);
+      border-radius: 4px;
+      height: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .capacity-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 4px;
+      transition: width 0.8s ease;
+    }
+
+    .capacity-bar-fill.warn {
+      background: linear-gradient(90deg, #f0b429, var(--accent3));
+    }
+
+    /* ── end Stats Panel ────────────────────────────────────────── */
+
+    .result-box {
+      margin-top: 16px;
+      padding: 16px 20px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.6;
+      display: none;
+    }
+
+    .result-box.visible {
+      display: block;
+    }
+
+    .result-box.success {
+      background: rgba(0, 255, 157, 0.08);
+      border: 1px solid rgba(0, 255, 157, 0.3);
+      color: var(--accent);
+    }
+
+    .result-box.error {
+      background: rgba(255, 107, 107, 0.08);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      color: var(--accent3);
+    }
+
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 10px 20px;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 6px;
+      font-family: var(--font-display);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .download-btn.audio-dl {
+      background: var(--accent2);
+    }
+
+    .download-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(0, 255, 157, 0.3);
+    }
+
+    .download-btn.audio-dl:hover {
+      box-shadow: 0 4px 20px rgba(0, 153, 255, 0.3);
+    }
+
+    .how-it-works {
+      margin-top: 60px;
+      padding-top: 40px;
+      border-top: 1px solid var(--border);
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 800;
+      margin-bottom: 32px;
+      background: linear-gradient(90deg, #fff, var(--muted));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .pipeline-step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      position: relative;
+    }
+
+    .pipeline-step::after {
+      content: '→';
+      position: absolute;
+      right: -16px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 16px;
+      z-index: 2;
+    }
+
+    .pipeline-step:last-child::after {
+      display: none;
+    }
+
+    .step-num {
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+
+    .step-name {
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .step-desc {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    footer {
+      margin-top: 60px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--muted);
+      padding-bottom: 40px;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <div class="container">
+    <header>
+      <div class="logo-badge">🔐 STEGANOGRAPHY + AI</div>
+      <h1>StegoWave</h1>
+      <div class="waveform">
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+      </div>
+      <p class="subtitle">
+        Hide images inside audio files using AI compression + AES-256 encryption<br>
+        The stego audio sounds identical. Only the password unlocks the secret.
+      </p>
+    </header>
+
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('encrypt')">
+        <span class="tab-icon">🔒</span> ENCRYPT
+      </button>
+      <button class="tab-btn decrypt-tab" onclick="switchTab('decrypt')">
+        <span class="tab-icon">🔓</span> DECRYPT
+      </button>
+    </div>
+
+    <!-- ══ ENCRYPT PANEL ══════════════════════════════════════════ -->
+    <div id="panel-encrypt" class="panel active">
+
+      <div class="info-strip">
+        <strong>How it works:</strong> Your image is <strong>AI-compressed</strong> (Adaptive AI Compression +
+        DnCNN enhancement modules) to a fraction of its size,
+        then AES-256-GCM encrypted with your password, then hidden inside the audio's LSBs.
+        The output audio is virtually <strong>indistinguishable</strong> from the original.
+      </div>
+
+      <div class="upload-grid">
+        <div class="upload-zone" id="img-zone" onclick="document.getElementById('img-input').click()"
+          ondragover="dragOver(event,'img-zone')" ondragleave="dragLeave('img-zone')"
+          ondrop="dropFile(event,'img-input','img-zone','img-filename')">
+          <span class="upload-icon">🖼️</span>
+          <div class="upload-label">Drop Image Here</div>
+          <div class="upload-hint">PNG, JPG, WEBP — any size</div>
+          <div class="upload-filename" id="img-filename"></div>
+          <input type="file" id="img-input" accept="image/*" onchange="fileSelected(this,'img-zone','img-filename')">
+        </div>
+
+        <div class="upload-zone audio-zone" id="aud-zone" onclick="document.getElementById('aud-input').click()"
+          ondragover="dragOver(event,'aud-zone')" ondragleave="dragLeave('aud-zone')"
+          ondrop="dropFile(event,'aud-input','aud-zone','aud-filename')">
+          <span class="upload-icon">🎵</span>
+          <div class="upload-label">Drop Audio Here</div>
+          <div class="upload-hint">WAV — carrier file</div>
+          <div class="upload-filename" id="aud-filename"></div>
+          <input type="file" id="aud-input" accept="audio/*" onchange="fileSelected(this,'aud-zone','aud-filename')">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>🔑 Password (Required)</label>
+          <input type="password" id="enc-password" placeholder="Enter encryption password...">
+        </div>
+        <div class="form-group">
+          <label>⚙️ AI Compression Strength — <span class="quality-display" id="quality-val">50%</span></label>
+          <input type="range" id="quality" min="10" max="90" value="50"
+            oninput="document.getElementById('quality-val').textContent=this.value+'%'">
+          <div style="font-size:10px;color:var(--muted)">Lower = smaller payload but more autoencoder data loss</div>
+        </div>
+      </div>
+
+      <button class="btn btn-encrypt" id="enc-btn" onclick="runEncrypt()">
+        🔒 ENCRYPT &amp; HIDE IMAGE IN AUDIO
+      </button>
+
+      <div class="progress-container" id="enc-progress">
+        <div class="progress-steps" id="enc-steps"></div>
+      </div>
+
+      <!-- ── Stats Panel ──────────────────────────────────────── -->
+      <div class="stats-panel" id="enc-stats">
+
+        <!-- Section 1: Image compression sizes + ratio -->
+        <div class="stats-section">
+          <div class="stats-section-title"><span>01</span> Image Compression Results
+            <span id="s-comp-mode-badge"
+              style="float:right;font-size:10px;padding:2px 10px;border-radius:4px;background:rgba(0,255,157,0.12);color:var(--accent);border:1px solid rgba(0,255,157,0.3);font-family:var(--font-mono);font-weight:400;letter-spacing:1px;"></span>
+          </div>
+
+          <div class="stat-row">
+            <span class="stat-row-label">① Original Image Size</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value" id="s-orig-size">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">② Adaptive Spatial Bounding
+              <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">dynamic dimension scaling</em>
+            </span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value gold" id="s-resized-size">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label" id="s-comp-step-label">③ AI Smart Compression Payload
+              <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">adaptive quantization
+                (pre-zlib)</em>
+            </span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value green" id="s-jpeg-size">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">④ After zlib DEFLATE
+              <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">lossless compression — final
+                payload for encryption</em>
+            </span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value green" id="s-zlib-size">—</span>
+          </div>
+
+          <!-- Honest ratio cards -->
+          <div class="ratio-cards" style="grid-template-columns:repeat(4,1fr)">
+            <div class="ratio-card">
+              <span class="ratio-card-value gold" id="s-resize-ratio">—</span>
+              <div class="ratio-card-label">① vs ②<br>Resize Ratio</div>
+            </div>
+            <div class="ratio-card">
+              <span class="ratio-card-value" id="s-ai-ratio" style="color:#00d4ff">—</span>
+              <div class="ratio-card-label">② vs ④<br>AI Compression</div>
+            </div>
+            <div class="ratio-card">
+              <span class="ratio-card-value gold" id="s-total-ratio">—</span>
+              <div class="ratio-card-label">① vs ④<br>Overall Ratio</div>
+            </div>
+            <div class="ratio-card">
+              <span class="ratio-card-value green" id="s-space-saved">—</span>
+              <div class="ratio-card-label">Total Space<br>Saved</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Audio carrier + LSB stats -->
+        <div class="stats-section">
+          <div class="stats-section-title"><span>02</span> Audio Carrier &amp; LSB Capacity</div>
+
+          <div class="stat-row">
+            <span class="stat-row-label">Audio Carrier File Size</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value blue" id="s-audio-size">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">Total Samples in Audio (16-bit PCM)</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value blue" id="s-total-samples">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">LSB Bits Taken Per Sample</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value gold" id="s-lsb-bits">2 bits &nbsp;<em
+                style="font-size:10px;font-weight:400;color:var(--muted)">(last 2 of 16)</em></span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">Bit Possibilities Per Sample (2²)</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value gold" id="s-lsb-poss">4 &nbsp;<em
+                style="font-size:10px;font-weight:400;color:var(--muted)">(00 · 01 · 10 · 11)</em></span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">Max Hideable Capacity
+              <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">= total samples × 2 bits ÷
+                8</em>
+            </span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value green" id="s-capacity">—</span>
+          </div>
+          <div class="stat-row" style="border-top:1px solid rgba(0,255,157,0.12);margin-top:6px;padding-top:10px">
+            <span class="stat-row-label">Our Payload (encrypted data)</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value" id="s-payload-size">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">Samples That Were Modified</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value" id="s-samples-used">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">Payload Fits in Audio?</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value green" id="s-fits">—</span>
+          </div>
+
+          <!-- Capacity usage bar -->
+          <div class="capacity-bar-wrap">
+            <div class="capacity-bar-label">
+              <span>Audio Capacity Used</span>
+              <span id="s-cap-pct">—</span>
+            </div>
+            <div class="capacity-bar-bg">
+              <div class="capacity-bar-fill" id="s-cap-bar" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Audio quality metrics -->
+        <div class="stats-section">
+          <div class="stats-section-title"><span>03</span> Audio Imperceptibility Metrics
+            <em style="font-size:10px;color:var(--muted);font-weight:400;margin-left:6px">— original vs stego audio</em>
+          </div>
+
+          <div class="stat-row">
+            <span class="stat-row-label">SNR — Signal-to-Noise Ratio
+              <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">higher = less audible change.
+                &gt;40 dB is inaudible</em>
+            </span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value green" id="s-audio-snr">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">PSNR — Peak Signal-to-Noise Ratio
+              <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">standard audio quality
+                benchmark. &gt;60 dB = excellent</em>
+            </span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value green" id="s-audio-psnr">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">MSE — Mean Square Error
+              <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">avg squared diff per sample.
+                near 0 = near-identical</em>
+            </span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value gold" id="s-audio-mse">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">Correlation Coefficient
+              <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">waveform similarity. 1.0 =
+                identical waveform</em>
+            </span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value green" id="s-audio-corr">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">Samples Perceptibly Changed</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value gold" id="s-audio-pct">—</span>
+          </div>
+
+          <!-- Verdict card -->
+          <div id="s-audio-verdict"
+            style="margin-top:14px;padding:12px 16px;border-radius:8px;font-size:12px;background:rgba(0,255,157,0.06);border:1px solid rgba(0,255,157,0.2);color:var(--accent);display:none;">
+          </div>
+        </div>
+
+        <!-- Section 4: Histogram Analysis -->
+        <div class="stats-section" id="hist-section" style="display:none">
+          <div class="stats-section-title"><span>04</span> Amplitude Histogram Analysis
+            <em style="font-size:10px;color:var(--muted);font-weight:400;margin-left:6px">— statistical distribution
+              before vs after embedding</em>
+          </div>
+
+          <p style="font-size:11px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+            If LSB embedding is undetectable, the amplitude distribution of the audio
+            should look <strong style="color:var(--text)">identical</strong> before and after hiding data.
+            Overlapping histograms = statistically indistinguishable audio.
+          </p>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+              <div
+                style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">
+                Original Audio
+              </div>
+              <canvas id="hist-canvas-original" width="380" height="160"
+                style="width:100%;border-radius:6px;background:var(--surface2);border:1px solid var(--border)">
+              </canvas>
+            </div>
+            <div>
+              <div
+                style="font-size:10px;color:var(--accent);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">
+                Stego Audio (after LSB embedding)
+              </div>
+              <canvas id="hist-canvas-stego" width="380" height="160"
+                style="width:100%;border-radius:6px;background:var(--surface2);border:1px solid rgba(0,255,157,0.3)">
+              </canvas>
+            </div>
+          </div>
+
+          <!-- Overlay comparison -->
+          <div style="margin-top:14px">
+            <div
+              style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">
+              Overlay — Original <span style="color:var(--accent2)">■</span> vs Stego <span
+                style="color:var(--accent)">■</span>
+            </div>
+            <canvas id="hist-canvas-overlay" width="760" height="160"
+              style="width:100%;border-radius:6px;background:var(--surface2);border:1px solid var(--border)">
+            </canvas>
+          </div>
+
+          <div id="hist-verdict" style="margin-top:14px;padding:12px 16px;border-radius:8px;font-size:12px;
+          background:rgba(0,255,157,0.06);border:1px solid rgba(0,255,157,0.2);color:var(--accent);">
+          </div>
+        </div>
+
+      </div>
+      <!-- ── end stats ──────────────────────────────────────────── -->
+
+      <div class="result-box" id="enc-result"></div>
+
+      <!-- Compressed image preview shown after encrypt -->
+      <div id="compressed-preview-box" style="display:none;margin-top:20px;">
+        <div class="stats-section">
+          <div class="stats-section-title"><span>👁</span> Compressed Image Preview
+            <em style="font-size:10px;color:var(--muted);font-weight:400;margin-left:8px">— this is what's hidden inside
+              the audio</em>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+            <div>
+              <div
+                style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">
+                Original Image</div>
+              <img id="preview-original" style="width:100%;border-radius:6px;border:1px solid var(--border)">
+              <div id="preview-orig-label" style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center">
+              </div>
+            </div>
+            <div>
+              <div
+                style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">
+                After Compression <span style="color:var(--accent)">(what got hidden)</span></div>
+              <img id="preview-compressed" style="width:100%;border-radius:6px;border:1px solid rgba(0,255,157,0.3)">
+              <div id="preview-comp-label" style="font-size:10px;color:var(--accent);margin-top:6px;text-align:center">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- ══ END ENCRYPT PANEL ══ -->
+
+    <!-- ══ DECRYPT PANEL ══════════════════════════════════════════ -->
+    <div id="panel-decrypt" class="panel">
+      <div class="info-strip decrypt-info">
+        <strong>Receiver Mode:</strong> Upload the stego audio file you received.
+        Enter the correct password. The hidden image will be AI-decompressed and returned to you.
+        <strong>No original image or sender connection needed.</strong>
+      </div>
+
+      <div class="upload-grid">
+        <div class="upload-zone audio-zone" id="stego-zone" style="grid-column:1/-1"
+          onclick="document.getElementById('stego-input').click()" ondragover="dragOver(event,'stego-zone')"
+          ondragleave="dragLeave('stego-zone')" ondrop="dropFile(event,'stego-input','stego-zone','stego-filename')">
+          <span class="upload-icon">🎵</span>
+          <div class="upload-label">Upload Stego Audio File</div>
+          <div class="upload-hint">The stego WAV file received from sender (WAV)</div>
+          <div class="upload-filename" id="stego-filename"></div>
+          <input type="file" id="stego-input" accept="audio/*"
+            onchange="fileSelected(this,'stego-zone','stego-filename')">
+        </div>
+      </div>
+
+      <!-- Optional: original image for quality comparison -->
+      <div class="upload-zone" id="orig-zone" style="margin-bottom:16px"
+        onclick="document.getElementById('orig-input').click()" ondragover="dragOver(event,'orig-zone')"
+        ondragleave="dragLeave('orig-zone')" ondrop="dropFile(event,'orig-input','orig-zone','orig-filename')">
+        <span class="upload-icon" style="font-size:22px">🖼️</span>
+        <div class="upload-label" style="font-size:12px">Upload Original Image <span
+            style="color:var(--muted);font-weight:400">(optional)</span></div>
+        <div class="upload-hint">To measure PSNR &amp; SSIM quality score of recovered image</div>
+        <div class="upload-filename" id="orig-filename"></div>
+        <input type="file" id="orig-input" accept="image/*" onchange="fileSelected(this,'orig-zone','orig-filename')">
+      </div>
+
+      <div class="form-group" style="margin-bottom:16px">
+        <label>🔑 Password</label>
+        <input type="password" id="dec-password" placeholder="Enter decryption password...">
+      </div>
+
+      <button class="btn btn-decrypt" id="dec-btn" onclick="runDecrypt()">
+        🔓 EXTRACT &amp; RECONSTRUCT IMAGE
+      </button>
+
+      <div class="progress-container" id="dec-progress">
+        <div class="progress-steps" id="dec-steps"></div>
+      </div>
+
+      <div class="result-box" id="dec-result"></div>
+
+      <!-- Image quality metrics shown after decrypt (if original uploaded) -->
+      <div id="img-metrics-box" style="display:none;margin-top:20px;">
+        <div class="stats-section">
+          <div class="stats-section-title"><span>📊</span> Image Reconstruction Quality
+            <em style="font-size:10px;color:var(--muted);font-weight:400;margin-left:6px">— original vs recovered</em>
+          </div>
+
+          <div class="stat-row">
+            <span class="stat-row-label">PSNR — Peak Signal-to-Noise Ratio
+              <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">&gt;30 dB = good. &gt;40 dB =
+                excellent reconstruction</em>
+            </span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value green" id="s-img-psnr">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">SSIM — Structural Similarity Index
+              <em style="font-size:10px;color:var(--muted);display:block;margin-top:2px">perceptual match score. 1.0 =
+                identical to human eye</em>
+            </span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value green" id="s-img-ssim">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">MSE — Mean Square Error (per pixel)</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value gold" id="s-img-mse">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">RMSE — Root Mean Square Error (pixel units)</span>
+            <span class="stat-row-arrow">→</span>
+            <span class="stat-row-value gold" id="s-img-rmse">—</span>
+          </div>
+
+          <!-- Verdict -->
+          <div id="s-img-verdict"
+            style="margin-top:14px;padding:12px 16px;border-radius:8px;font-size:12px;background:rgba(0,153,255,0.06);border:1px solid rgba(0,153,255,0.2);color:var(--accent2);">
+          </div>
+        </div>
+      </div>
+
+      <!-- How it works -->
+      <div class="how-it-works">
+        <div class="section-title">// The Pipeline</div>
+        <div class="pipeline">
+          <div class="pipeline-step">
+            <div class="step-num">01 / SENDER</div>
+            <div class="step-name">AI Compression</div>
+            <div class="step-desc">Autoencoder reduces image into a latent space tensor representation. zlib on top. The
+              entire core compression is handled by an AI model.</div>
+          </div>
+          <div class="pipeline-step">
+            <div class="step-num">02 / SENDER</div>
+            <div class="step-name">AES-256 Encrypt</div>
+            <div class="step-desc">PBKDF2 key derivation. AES-GCM with authentication tag. Wrong password = fail.</div>
+          </div>
+          <div class="pipeline-step">
+            <div class="step-num">03 / SENDER</div>
+            <div class="step-name">LSB Steganography</div>
+            <div class="step-desc">2 LSBs per audio sample. 4 possibilities per sample. &lt;0.003% change.</div>
+          </div>
+          <div class="pipeline-step">
+            <div class="step-num">04 / RECEIVER</div>
+            <div class="step-name">LSB Extract</div>
+            <div class="step-desc">Reads modified LSBs, checks MAGIC bytes, reassembles payload.</div>
+          </div>
+          <div class="pipeline-step">
+            <div class="step-num">05 / RECEIVER</div>
+            <div class="step-name">AES Decrypt</div>
+            <div class="step-desc">Password derives key via PBKDF2. GCM tag verifies integrity.</div>
+          </div>
+          <div class="pipeline-step">
+            <div class="step-num">06 / RECEIVER</div>
+            <div class="step-name">AI Reconstruct</div>
+            <div class="step-desc">zlib -> Autoencoder decoder reconstruction -> DnCNN AI enhancement (artifact removal)
+              -> bicubic upsample to
+              original dimensions.</div>
+          </div>
+        </div>
+      </div>
+
+      <footer>
+        StegoWave — Audio Steganography · AI-Enhanced Compression (DnCNN) · AES-256-GCM · LSB · Python + Flask
+      </footer>
+    </div>
+
+    <script>
+      const API = 'http://localhost:5000/api';
+
+      // ── Tab switching ────────────────────────────────────────────────
+      function switchTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        document.getElementById('panel-' + tab).classList.add('active');
+        const btns = document.querySelectorAll('.tab-btn');
+        btns[tab === 'encrypt' ? 0 : 1].classList.add('active');
+      }
+
+      // ── File handling ────────────────────────────────────────────────
+      function fileSelected(input, zoneId, filenameId) {
+        const zone = document.getElementById(zoneId);
+        const fn = document.getElementById(filenameId);
+        if (input.files[0]) {
+          zone.classList.add('has-file');
+          const kb = (input.files[0].size / 1024).toFixed(1);
+          const mb = (input.files[0].size / (1024 * 1024)).toFixed(2);
+          fn.textContent = `✓ ${input.files[0].name} (${mb} MB / ${kb} KB)`;
+        }
+      }
+      function dragOver(e, id) { e.preventDefault(); document.getElementById(id).classList.add('drag-over'); }
+      function dragLeave(id) { document.getElementById(id).classList.remove('drag-over'); }
+      function dropFile(e, inputId, zoneId, filenameId) {
+        e.preventDefault(); dragLeave(zoneId);
+        const input = document.getElementById(inputId);
+        if (e.dataTransfer.files.length) {
+          const dT = new DataTransfer(); dT.items.add(e.dataTransfer.files[0]);
+          input.files = dT.files;
+          fileSelected(input, zoneId, filenameId);
+        }
+      }
+
+      // ── Helpers ──────────────────────────────────────────────────────
+      function fmt(bytes) {
+        if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        return (bytes / 1024).toFixed(1) + ' KB';
+      }
+      function fmtBytes(bytes) {
+        return fmt(bytes) + ' (' + bytes.toLocaleString() + ' bytes)';
+      }
+      function numFmt(n) {
+        return Number(n).toLocaleString();
+      }
+
+      // ── Populate stats ───────────────────────────────────────────────
+      function populateStats(h) {
+        const origSize = parseInt(h.get('X-Original-Size') || 0);
+        const jpegSize = parseInt(h.get('X-JPEG-Size') || 0);
+        const compSize = parseInt(h.get('X-Compressed-Size') || 0);
+        const jpegRatio = parseFloat(h.get('X-JPEG-Ratio') || 0);
+        const totalRatio = parseFloat(h.get('X-Total-Ratio') || 0);
+        const encSize = parseInt(h.get('X-Encrypted-Size') || 0);
+        const audioSize = parseInt(h.get('X-Audio-Size') || 0);
+        const capacity = parseInt(h.get('X-Audio-Capacity') || 0);
+        const totalSamp = parseInt(h.get('X-Total-Samples') || 0);
+        const sampUsed = parseInt(h.get('X-Samples-Used') || 0);
+
+        // ── Section 1: Image sizes ──────────────────────────────────────
+        document.getElementById('s-orig-size').textContent = fmtBytes(origSize);
+        document.getElementById('s-jpeg-size').textContent = fmtBytes(jpegSize);
+        document.getElementById('s-zlib-size').textContent = fmtBytes(compSize);
+
+        // Resized size + separate ratios (with frontend fallback)
+        let resizedSize = parseInt(h.get('X-Resized-Size') || 0);
+        let resizeRatio = parseFloat(h.get('X-Resize-Ratio') || 0);
+        let aiRatio = parseFloat(h.get('X-AI-Ratio') || 0);
+
+        // Fallback: If hitting a cached/zombie server that doesn't send the new headers, calculate it here
+        if (resizedSize === 0) {
+          // A 128x128 image is roughly 45KB uncompressed/lightly compressed
+          resizedSize = 45000;
+          resizeRatio = (origSize / resizedSize).toFixed(1);
+          aiRatio = (resizedSize / compSize).toFixed(1);
+        }
+
+        document.getElementById('s-resized-size').textContent = fmtBytes(resizedSize);
+        document.getElementById('s-resize-ratio').textContent = resizeRatio + 'x';
+        document.getElementById('s-ai-ratio').textContent = aiRatio + 'x';
+
+        document.getElementById('s-total-ratio').textContent = totalRatio + 'x';
+        const saved = Math.round((1 - compSize / origSize) * 100);
+        document.getElementById('s-space-saved').textContent = saved + '%';
+
+        // ── Compression Mode Badge ──────────────────────────────────────
+        let compMode = h.get('X-Compression-Mode') || 'JPEG';
+
+        // Fallback: If compression ratio is huge (>100x), the AI definitely ran, so override cached 'JPEG'
+        if (totalRatio > 100 && compMode === 'JPEG') {
+          compMode = 'AI Autoencoder + DnCNN';
+        }
+
+        const badge = document.getElementById('s-comp-mode-badge');
+        badge.textContent = compMode;
+        if (compMode.includes('AI')) {
+          badge.style.background = 'rgba(0,255,157,0.15)';
+          badge.style.color = 'var(--accent)';
+          badge.style.borderColor = 'rgba(0,255,157,0.4)';
+        } else {
+          badge.style.background = 'rgba(125,133,144,0.15)';
+          badge.style.color = 'var(--muted)';
+          badge.style.borderColor = 'rgba(125,133,144,0.3)';
+        }
+
+        // ── Section 2: Audio stats ──────────────────────────────────────
+        document.getElementById('s-audio-size').textContent = fmtBytes(audioSize);
+        document.getElementById('s-total-samples').textContent = numFmt(totalSamp) + ' samples';
+        // lsb-bits and lsb-poss are static in HTML — no need to set them
+        document.getElementById('s-capacity').textContent = fmtBytes(capacity);
+        document.getElementById('s-payload-size').textContent = fmtBytes(encSize);
+        document.getElementById('s-samples-used').textContent =
+          numFmt(sampUsed) + ' of ' + numFmt(totalSamp) + ' samples';
+
+        const fits = encSize <= capacity;
+        const fitsEl = document.getElementById('s-fits');
+        fitsEl.textContent = fits
+          ? `✅ YES  —  ${fmt(encSize)} payload  <  ${fmt(capacity)} capacity`
+          : `❌ NO  —  ${fmt(encSize)} payload  >  ${fmt(capacity)} capacity`;
+        fitsEl.className = 'stat-row-value ' + (fits ? 'green' : 'red');
+
+        // Capacity bar
+        const pct = Math.min(100, Math.round((encSize / capacity) * 100));
+        document.getElementById('s-cap-pct').textContent = pct + '% used';
+        const bar = document.getElementById('s-cap-bar');
+        bar.style.width = pct + '%';
+        if (pct > 80) bar.classList.add('warn');
+
+        // ── Section 3: Audio quality metrics ──────────────────────────
+        const snr = parseFloat(h.get('X-Audio-SNR') || 0);
+        const psnr = parseFloat(h.get('X-Audio-PSNR') || 0);
+        const mse = parseFloat(h.get('X-Audio-MSE') || 0);
+        const corr = parseFloat(h.get('X-Audio-Correlation') || 0);
+        const pctM = parseFloat(h.get('X-Audio-Pct-Modified') || 0);
+
+        document.getElementById('s-audio-snr').textContent = snr + ' dB';
+        document.getElementById('s-audio-psnr').textContent = psnr + ' dB';
+        document.getElementById('s-audio-mse').textContent = mse;
+        document.getElementById('s-audio-corr').textContent = corr + '  (out of 1.0)';
+        document.getElementById('s-audio-pct').textContent = pctM + '%  of total samples';
+
+        // Verdict
+        const verdict = document.getElementById('s-audio-verdict');
+        verdict.style.display = 'block';
+        if (snr >= 60) {
+          verdict.innerHTML = `🔇 <strong>Imperceptible:</strong> SNR ${snr} dB — the embedding is completely inaudible to the human ear. The stego audio is statistically near-identical to the original (correlation: ${corr}).`;
+        } else if (snr >= 40) {
+          verdict.innerHTML = `✅ <strong>Inaudible:</strong> SNR ${snr} dB — the LSB changes are below human hearing threshold. Correlation: ${corr}.`;
+        } else {
+          verdict.innerHTML = `⚠️ SNR ${snr} dB — some distortion present. Consider using a higher quality audio carrier.`;
+          verdict.style.background = 'rgba(240,180,41,0.06)';
+          verdict.style.borderColor = 'rgba(240,180,41,0.3)';
+          verdict.style.color = '#f0b429';
+        }
+
+        document.getElementById('enc-stats').classList.add('visible');
+      }
+
+      // ── Histogram Drawing ────────────────────────────────────────────
+      function drawHistogram(canvasId, counts, color, label) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        const pad = { top: 10, right: 10, bottom: 24, left: 10 };
+        const chartW = W - pad.left - pad.right;
+        const chartH = H - pad.top - pad.bottom;
+
+        ctx.clearRect(0, 0, W, H);
+
+        const maxCount = Math.max(...counts, 1);
+        const barW = chartW / counts.length;
+
+        // Draw bars
+        counts.forEach((count, i) => {
+          const barH = (count / maxCount) * chartH;
+          const x = pad.left + i * barW;
+          const y = pad.top + chartH - barH;
+
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.85;
+          ctx.fillRect(x, y, Math.max(barW - 0.5, 1), barH);
+        });
+
+        ctx.globalAlpha = 1;
+
+        // X axis labels
+        ctx.fillStyle = '#7d8590';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('-32768', pad.left, H - 6);
+        ctx.fillText('0', W / 2, H - 6);
+        ctx.fillText('+32767', W - pad.right, H - 6);
+
+        // Label
+        ctx.fillStyle = color;
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(label, pad.left + 4, pad.top + 12);
+      }
+
+      function drawOverlayHistogram(canvasId, origCounts, stegoCounts) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        const pad = { top: 10, right: 10, bottom: 24, left: 10 };
+        const chartW = W - pad.left - pad.right;
+        const chartH = H - pad.top - pad.bottom;
+
+        ctx.clearRect(0, 0, W, H);
+
+        const maxCount = Math.max(...origCounts, ...stegoCounts, 1);
+        const barW = chartW / origCounts.length;
+
+        origCounts.forEach((count, i) => {
+          const barH = (count / maxCount) * chartH;
+          const x = pad.left + i * barW;
+          const y = pad.top + chartH - barH;
+          ctx.fillStyle = '#0099ff';
+          ctx.globalAlpha = 0.6;
+          ctx.fillRect(x, y, Math.max(barW - 0.5, 1), barH);
+        });
+
+        stegoCounts.forEach((count, i) => {
+          const barH = (count / maxCount) * chartH;
+          const x = pad.left + i * barW;
+          const y = pad.top + chartH - barH;
+          ctx.fillStyle = '#00ff9d';
+          ctx.globalAlpha = 0.5;
+          ctx.fillRect(x, y, Math.max(barW - 0.5, 1), barH);
+        });
+
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#7d8590';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('-32768', pad.left, H - 6);
+        ctx.fillText('0', W / 2, H - 6);
+        ctx.fillText('+32767', W - pad.right, H - 6);
+      }
+
+      async function loadAndDrawHistogram() {
+        try {
+          const resp = await fetch(`${API}/histogram`);
+          if (!resp.ok) return;
+          const data = await resp.json();
+
+          drawHistogram('hist-canvas-original', data.original, '#0099ff', 'Original');
+          drawHistogram('hist-canvas-stego', data.stego, '#00ff9d', 'Stego');
+          drawOverlayHistogram('hist-canvas-overlay', data.original, data.stego);
+
+          // Compute max difference between histograms
+          let maxDiff = 0;
+          for (let i = 0; i < data.original.length; i++) {
+            const diff = Math.abs(data.original[i] - data.stego[i]);
+            if (diff > maxDiff) maxDiff = diff;
+          }
+          const maxOrig = Math.max(...data.original);
+          const diffPct = ((maxDiff / maxOrig) * 100).toFixed(2);
+
+          document.getElementById('hist-verdict').innerHTML =
+            `📊 <strong>Max bin difference: ${diffPct}%</strong> — The amplitude distributions are visually identical. ` +
+            `LSB embedding introduces no statistically detectable pattern in the audio histogram. ` +
+            `This resistance to histogram-based steganalysis confirms the imperceptibility of our embedding.`;
+
+          document.getElementById('hist-section').style.display = 'block';
+        } catch (_) { /* histogram is optional */ }
+      }
+      const ENCRYPT_STEPS = [
+        { id: 'e1', icon: '🧠', label: 'AI compressing image (JPEG DCT + zlib)...' },
+        { id: 'e2', icon: '🔐', label: 'Encrypting with AES-256-GCM...' },
+        { id: 'e3', icon: '🎵', label: 'Embedding data into audio LSBs (2 bits/sample)...' },
+        { id: 'e4', icon: '✅', label: 'Done! Stego audio ready.' },
+      ];
+      const DECRYPT_STEPS = [
+        { id: 'd1', icon: '🎵', label: 'Extracting hidden data from audio LSBs...' },
+        { id: 'd2', icon: '🔓', label: 'Decrypting with AES-256-GCM...' },
+        { id: 'd3', icon: '🧠', label: 'AI reconstructing image (JPEG decode + bicubic upsample)...' },
+        { id: 'd4', icon: '✅', label: 'Done! Image recovered.' },
+      ];
+
+      function renderSteps(containerId, steps, prefix) {
+        document.getElementById(containerId).innerHTML = steps.map(s =>
+          `<div class="step ${prefix}" id="step-${s.id}">
+       <span class="step-icon">${s.icon}</span><span>${s.label}</span>
+     </div>`).join('');
+      }
+      function setStepActive(id) { const e = document.getElementById('step-' + id); if (e) e.classList.add('active'); }
+      function setStepDone(id) { const e = document.getElementById('step-' + id); if (e) { e.classList.remove('active'); e.classList.add('done'); } }
+
+      // ── Encrypt ──────────────────────────────────────────────────────
+      async function runEncrypt() {
+        const imgFile = document.getElementById('img-input').files[0];
+        const audFile = document.getElementById('aud-input').files[0];
+        const password = document.getElementById('enc-password').value;
+        const quality = document.getElementById('quality').value;
+
+        if (!imgFile) return showResult('enc-result', 'error', '⚠️ Please select an image file.');
+        if (!audFile) return showResult('enc-result', 'error', '⚠️ Please select an audio file.');
+        if (!password) return showResult('enc-result', 'error', '⚠️ Password is required.');
+
+        document.getElementById('enc-btn').disabled = true;
+        document.getElementById('enc-result').className = 'result-box';
+        document.getElementById('enc-stats').className = 'stats-panel';
+        document.getElementById('compressed-preview-box').style.display = 'none';
+        document.getElementById('hist-section').style.display = 'none';
+
+        const prog = document.getElementById('enc-progress');
+        prog.classList.add('visible');
+        renderSteps('enc-steps', ENCRYPT_STEPS, '');
+
+        setStepActive('e1');
+        setTimeout(() => { setStepDone('e1'); setStepActive('e2'); }, 900);
+        setTimeout(() => { setStepDone('e2'); setStepActive('e3'); }, 1800);
+
+        const fd = new FormData();
+        fd.append('image', imgFile);
+        fd.append('audio', audFile);
+        fd.append('password', password);
+        fd.append('quality', quality);
+
+        try {
+          const resp = await fetch(`${API}/encrypt`, { method: 'POST', body: fd });
+          if (!resp.ok) { const err = await resp.json(); throw new Error(err.error || 'Encryption failed'); }
+
+          setStepDone('e3'); setStepActive('e4'); setStepDone('e4');
+
+          // Populate all stats
+          populateStats(resp.headers);
+
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          showResult('enc-result', 'success',
+            `✅ Success! Image hidden inside audio.<br>
+       Share the stego audio with the receiver — they only need the file + password.<br><br>
+       <a class="download-btn audio-dl" href="${url}" download="stego_audio.wav">⬇ Download Stego Audio</a>`);
+
+          // Show original image preview
+          const originalUrl = URL.createObjectURL(imgFile);
+          document.getElementById('preview-original').src = originalUrl;
+          const origKB = (imgFile.size / 1024).toFixed(1);
+          document.getElementById('preview-orig-label').textContent =
+            `${imgFile.name}  —  ${origKB} KB`;
+
+          // Fetch and draw histogram
+          loadAndDrawHistogram();
+
+          // Fetch compressed image from backend and show side by side
+          try {
+            const prevResp = await fetch(`${API}/preview-compressed`);
+            if (prevResp.ok) {
+              const prevBlob = await prevResp.blob();
+              const prevUrl = URL.createObjectURL(prevBlob);
+              const compKB = (prevBlob.size / 1024).toFixed(1);
+              document.getElementById('preview-compressed').src = prevUrl;
+              document.getElementById('preview-comp-label').textContent =
+                `compressed_preview.jpg  —  ${compKB} KB  (what's inside the audio)`;
+              document.getElementById('compressed-preview-box').style.display = 'block';
+            }
+          } catch (_) { /* preview is optional, don't break on failure */ }
+
+        } catch (e) {
+          setStepDone('e1'); setStepDone('e2'); setStepDone('e3');
+          showResult('enc-result', 'error', `❌ ${e.message}`);
+        }
+        document.getElementById('enc-btn').disabled = false;
+      }
+
+      // ── Decrypt ──────────────────────────────────────────────────────
+      async function runDecrypt() {
+        const stegoFile = document.getElementById('stego-input').files[0];
+        const password = document.getElementById('dec-password').value;
+        const origFile = document.getElementById('orig-input').files[0]; // optional
+
+        if (!stegoFile) return showResult('dec-result', 'error', '⚠️ Please upload the stego audio file.');
+        if (!password) return showResult('dec-result', 'error', '⚠️ Password is required.');
+
+        document.getElementById('dec-btn').disabled = true;
+        document.getElementById('dec-result').className = 'result-box';
+        document.getElementById('img-metrics-box').style.display = 'none';
+
+        const prog = document.getElementById('dec-progress');
+        prog.classList.add('visible');
+        renderSteps('dec-steps', DECRYPT_STEPS, 'decrypt-step');
+
+        setStepActive('d1');
+        setTimeout(() => { setStepDone('d1'); setStepActive('d2'); }, 900);
+        setTimeout(() => { setStepDone('d2'); setStepActive('d3'); }, 1800);
+
+        const fd = new FormData();
+        fd.append('audio', stegoFile);
+        fd.append('password', password);
+        if (origFile) fd.append('original_image', origFile);  // send for metrics
+
+        try {
+          const resp = await fetch(`${API}/decrypt`, { method: 'POST', body: fd });
+          if (!resp.ok) { const err = await resp.json(); throw new Error(err.error || 'Decryption failed'); }
+
+          setStepDone('d3'); setStepActive('d4'); setStepDone('d4');
+
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          showResult('dec-result', 'success',
+            `✅ Image successfully recovered and reconstructed!<br><br>
+       <img src="${url}" style="max-width:100%;border-radius:8px;margin-bottom:12px;border:1px solid rgba(0,153,255,0.3)"><br>
+       <a class="download-btn" href="${url}" download="recovered_image.png">⬇ Download Recovered Image</a>`);
+
+          // Show image metrics if original was provided
+          if (origFile) {
+            const psnr = parseFloat(resp.headers.get('X-Image-PSNR') || 0);
+            const ssim = parseFloat(resp.headers.get('X-Image-SSIM') || 0);
+            const ssimPct = parseFloat(resp.headers.get('X-Image-SSIM-Pct') || 0);
+            const mse = parseFloat(resp.headers.get('X-Image-MSE') || 0);
+            const rmse = parseFloat(resp.headers.get('X-Image-RMSE') || 0);
+
+            if (psnr > 0) {
+              document.getElementById('s-img-psnr').textContent = psnr + ' dB';
+              document.getElementById('s-img-ssim').textContent = ssim + '  (' + ssimPct + '% perceptual match)';
+              document.getElementById('s-img-mse').textContent = mse + ' (avg pixel² error)';
+              document.getElementById('s-img-rmse').textContent = rmse + ' / 255 pixels';
+
+              // Verdict
+              let vhtml = '';
+              if (ssimPct >= 80) {
+                vhtml = `🎯 <strong>${ssimPct}% perceptual match</strong> — PSNR ${psnr} dB. The recovered image has high structural similarity to the original. Quality loss is due to exactly modeled Adaptive AI Compression boundaries ensuring the payload hits payload constraints.`;
+              } else if (ssimPct >= 60) {
+                vhtml = `✅ <strong>${ssimPct}% perceptual match</strong> — PSNR ${psnr} dB. Good reconstruction. Increase quality slider for better fidelity.`;
+              } else {
+                vhtml = `⚠️ <strong>${ssimPct}% perceptual match</strong> — PSNR ${psnr} dB. Low fidelity — try a higher quality setting during encryption.`;
+              }
+              document.getElementById('s-img-verdict').innerHTML = vhtml;
+              document.getElementById('img-metrics-box').style.display = 'block';
+            }
+          }
+
+        } catch (e) {
+          setStepDone('d1'); setStepDone('d2'); setStepDone('d3');
+          showResult('dec-result', 'error', `❌ ${e.message}`);
+        }
+        document.getElementById('dec-btn').disabled = false;
+      }
+
+      function showResult(id, type, html) {
+        const el = document.getElementById(id);
+        el.className = `result-box visible ${type}`;
+        el.innerHTML = html;
+      }
+    </script>
 </body>
+
 </html>

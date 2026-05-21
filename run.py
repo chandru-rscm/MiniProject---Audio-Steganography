@@ -13,10 +13,18 @@ import subprocess
 import sys
 import os
 
+# Reconfigure console stream to UTF-8 to support emoji characters on Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
+
 def check_deps():
     """Check if requirements are installed."""
     try:
-        import flask, numpy, PIL, scipy, sklearn, Crypto, soundfile
+        import flask, numpy, PIL, Crypto
         print("✅ All dependencies found.")
         return True
     except ImportError as e:

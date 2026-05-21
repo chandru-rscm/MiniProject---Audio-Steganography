@@ -15,7 +15,7 @@ import traceback
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
-from compression import compress_image, decompress_image, get_compression_ratio
+from compression import compress_image, decompress_image, get_compression_ratio, get_compression_mode
 from steganography import hide_data, extract_data, get_capacity
 from crypto import encrypt, decrypt
 from metrics import compute_audio_metrics, compute_image_metrics
@@ -23,8 +23,10 @@ from metrics import compute_audio_metrics, compute_image_metrics
 app = Flask(__name__)
 CORS(app)
 
-# Temp store for compressed image preview (single-user demo app)
-_last_preview_jpeg = None
+# Temp store for histogram data (original + stego audio)
+_last_preview_jpeg  = None
+_last_hist_original = None
+_last_hist_stego    = None
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB limit
 
@@ -82,24 +84,37 @@ def encrypt_endpoint():
         image_bytes = image_file.read()
         audio_bytes = audio_file.read()
 
-        # ── Step 1: AI Compress image ────────────────────────────────
-        print(f"[ENCRYPT] Compressing image ({len(image_bytes)/1024:.1f} KB) quality={quality}...")
-        compressed, comp_stats = compress_image(image_bytes, quality=quality)
+        # ── Step 1: Check audio capacity first ───────────────────────
+        capacity       = get_capacity(audio_bytes)
+        audio_size     = len(audio_bytes)
+        
+        # ── Step 2: AI Compress image (Targeting 90% Capacity) ───────
+        print(f"[ENCRYPT] Compressing image ({len(image_bytes)/1024:.1f} KB) quality={quality} targeting {capacity/1024:.1f} KB capacity...")
+        compressed, comp_stats = compress_image(image_bytes, quality=quality, capacity=capacity)
         compressed_size = len(compressed)
 
-        # Extract JPEG bytes for preview (zlib decompress → skip 8-byte header)
+        # Extract bytes for compressed preview
         global _last_preview_jpeg
         raw = zlib.decompress(compressed)
-        _last_preview_jpeg = raw[8:]   # pure JPEG bytes, viewable image
+        if raw[:4] == b'AISM':
+            _last_preview_jpeg = raw[16:]   # skip AISM(4) + orig_w(4) + orig_h(4) + orig_size(4) → JPEG bytes
+        elif raw[:4] == b'AILF':
+            _last_preview_jpeg = raw[12:]   # skip AILF(4) + orig_w(4) + orig_h(4) → PNG bytes
+        elif raw[:4] == b'AICM':
+            # For pure AI mode, latent bytes don't natively render in browser.
+            # Convert explicitly using decompression so browser can show the preview.
+            _last_preview_jpeg = decompress_image(compressed)
+        elif raw[:4] == b'AIJP':
+            _last_preview_jpeg = raw[16:]   # skip AIJP(4) + orig_w(4) + orig_h(4) + orig_size(4)
+        else:
+            _last_preview_jpeg = raw[8:]    # skip orig_w(4) + orig_h(4)
 
-        # ── Step 2: AES-256-GCM encrypt ──────────────────────────────
+        # ── Step 3: AES-256-GCM encrypt ──────────────────────────────
         print("[ENCRYPT] Encrypting...")
         encrypted      = encrypt(compressed, password)
         encrypted_size = len(encrypted)
 
-        # ── Step 3: Check audio capacity ─────────────────────────────
-        capacity       = get_capacity(audio_bytes)
-        audio_size     = len(audio_bytes)
+        # ── Step 4: Verify final capacity constraints ────────────────
         total_samples  = capacity * 4          # each sample holds 2 bits = 0.25 bytes → samples = capacity*4
         lsb_bits       = 2
         lsb_possib     = 4                     # 2^2 = 4 possibilities per sample: 00,01,10,11
@@ -126,6 +141,11 @@ def encrypt_endpoint():
         print("[ENCRYPT] Computing audio metrics...")
         audio_metrics = compute_audio_metrics(audio_bytes, stego_audio)
 
+        # ── Step 6: Store histogram data for /api/histogram ──────────
+        global _last_hist_original, _last_hist_stego
+        _last_hist_original = _compute_histogram(audio_bytes)
+        _last_hist_stego    = _compute_histogram(stego_audio)
+
         # ── Return stego audio ────────────────────────────────────────
         out = io.BytesIO(stego_audio)
         out.seek(0)
@@ -148,10 +168,14 @@ def encrypt_endpoint():
         h['X-Resized-H']         = str(comp_stats['resized_h'])
         h['X-JPEG-Quality']      = str(comp_stats['jpeg_quality'])
         h['X-JPEG-Size']         = str(comp_stats['jpeg_size'])       # viewable image size
+        h['X-Resized-Size']      = str(comp_stats.get('resized_size', 0))
+        h['X-Resize-Ratio']      = str(comp_stats.get('resize_ratio', 0))
+        h['X-AI-Ratio']          = str(comp_stats.get('ai_ratio', 0))
         h['X-Compressed-Size']   = str(comp_stats['compressed_size']) # after zlib
         h['X-JPEG-Ratio']        = str(comp_stats['jpeg_ratio'])
         h['X-Total-Ratio']       = str(comp_stats['total_ratio'])
         h['X-Encrypted-Size']    = str(encrypted_size)
+        h['X-Compression-Mode']  = get_compression_mode()
 
         # Audio stats
         h['X-Audio-Size']        = str(audio_size)
@@ -171,8 +195,9 @@ def encrypt_endpoint():
         h['Access-Control-Expose-Headers'] = (
             'X-Original-Size, X-Original-W, X-Original-H, '
             'X-Resized-W, X-Resized-H, X-JPEG-Quality, '
-            'X-JPEG-Size, X-Compressed-Size, X-JPEG-Ratio, '
-            'X-Total-Ratio, X-Encrypted-Size, '
+            'X-JPEG-Size, X-Resized-Size, X-Resize-Ratio, X-AI-Ratio, '
+            'X-Compressed-Size, X-JPEG-Ratio, '
+            'X-Total-Ratio, X-Encrypted-Size, X-Compression-Mode, '
             'X-Audio-Size, X-Audio-Capacity, '
             'X-Total-Samples, X-Samples-Used, '
             'X-LSB-Bits, X-LSB-Possibilities, '
@@ -227,11 +252,19 @@ def decrypt_endpoint():
 
         out = io.BytesIO(image_bytes)
         out.seek(0)
+        
+        # Check image header magic bytes (JPEG starts with FF D8)
+        extension = 'png'
+        mime_type = 'image/png'
+        if image_bytes.startswith(b'\xff\xd8'):
+            extension = 'jpg'
+            mime_type = 'image/jpeg'
+            
         response = send_file(
             out,
-            mimetype='image/png',
+            mimetype=mime_type,
             as_attachment=True,
-            download_name='recovered_image.png'
+            download_name=f'recovered_image.{extension}'
         )
 
         # ── Image quality metrics (only if original provided) ─────────
@@ -263,6 +296,44 @@ def decrypt_endpoint():
         return jsonify({'error': f'Internal error: {str(e)}'}), 500
 
 
+def _compute_histogram(audio_bytes: bytes, bins: int = 128) -> list:
+    """
+    Compute amplitude histogram of audio samples.
+    Returns list of 'bins' counts covering range -32768 to 32767.
+    Uses only built-in wave + array modules — no numpy.
+    """
+    import wave
+    import array as arr
+
+    buf = io.BytesIO(audio_bytes)
+    with wave.open(buf) as wf:
+        raw = wf.readframes(wf.getnframes())
+
+    samples   = arr.array('h', raw)   # signed int16
+    bin_size  = 65536 // bins         # range 65536 / bins
+    counts    = [0] * bins
+
+    for s in samples:
+        idx = (s + 32768) // bin_size
+        idx = min(idx, bins - 1)      # clamp to last bin
+        counts[idx] += 1
+
+    return counts
+
+
+@app.route('/api/histogram', methods=['GET'])
+def get_histogram():
+    """Return histogram data for original and stego audio."""
+    if _last_hist_original is None or _last_hist_stego is None:
+        return jsonify({'error': 'No histogram data. Run encrypt first.'}), 404
+
+    return jsonify({
+        'original': _last_hist_original,
+        'stego':    _last_hist_stego,
+        'bins':     len(_last_hist_original),
+    })
+
+
 @app.route('/api/preview-compressed', methods=['GET'])
 def preview_compressed():
     """Return the last compressed JPEG as a downloadable image."""
@@ -271,11 +342,15 @@ def preview_compressed():
         return jsonify({'error': 'No preview available. Run encrypt first.'}), 404
     out = io.BytesIO(_last_preview_jpeg)
     out.seek(0)
+    
+    # AICM explicitly generates PNG from decompress_image
+    is_png = _last_preview_jpeg.startswith(b'\x89PNG')
+    
     return send_file(
         out,
-        mimetype='image/jpeg',
+        mimetype='image/png' if is_png else 'image/jpeg',
         as_attachment=False,
-        download_name='compressed_preview.jpg'
+        download_name='compressed_preview.png' if is_png else 'compressed_preview.jpg'
     )
 
 

@@ -1,9 +1,13 @@
-flask==3.0.0
-flask-cors==4.0.0
-numpy==1.26.4
-Pillow==10.2.0
-scipy==1.12.0
-scikit-learn==1.4.0
-pycryptodome==3.20.0
-soundfile==0.12.1
-librosa==0.10.1
+flask>=3.0.0
+flask-cors>=4.0.0
+numpy>=1.26.4
+Pillow>=10.3.0
+pycryptodome>=3.20.0
+pydub>=0.25.1
+
+# PyTorch dependencies are OPTIONAL. 
+# They are only needed if you want to train models or run local DnCNN artifact removal.
+# For standard web deployment (e.g. Render, Heroku) we recommend leaving these commented out
+# to keep the deployment extremely fast and lightweight (< 50MB instead of > 2GB).
+# torch>=2.0.0
+# torchvision>=0.15.0
