@@ -1,31 +1,18 @@
 """
-AES-256-GCM Encryption — StegoWave
-
-Implemented from scratch:
-    - SHA-256        : full 64-round hash algorithm
-    - HMAC-SHA256    : keyed hash using SHA-256
-    - PBKDF2-SHA256  : key derivation (100k iterations of HMAC-SHA256)
-    - AES-256 core   : SubBytes, ShiftRows, MixColumns, AddRoundKey, KeySchedule
-    
-GCM mode uses pycryptodome (CTR + GHASH authenticated encryption wrapper).
+AES-256-GCM Encryption and custom cryptographic helper functions.
 """
 
 import os
 import struct
 from Crypto.Cipher import AES as _AES_GCM
 
-
-# ══════════════════════════════════════════════════════════════════
-#  SHA-256 FROM SCRATCH
-# ══════════════════════════════════════════════════════════════════
-
-# SHA-256 initial hash values (first 32 bits of fractional parts of sqrt of first 8 primes)
+# SHA-256 initial hash values
 _SHA256_H0 = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 ]
 
-# SHA-256 round constants (first 32 bits of fractional parts of cbrt of first 64 primes)
+# SHA-256 round constants
 _SHA256_K = [
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
     0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
@@ -38,71 +25,38 @@ _SHA256_K = [
 ]
 
 def _rotr32(x: int, n: int) -> int:
-    """Rotate right 32-bit integer x by n bits."""
+    """Rotate right 32-bit integer by n bits."""
     return ((x >> n) | (x << (32 - n))) & 0xFFFFFFFF
 
 def _sha256_pad(message: bytes) -> bytes:
-    """
-    SHA-256 message padding:
-        1. Append bit '1' (0x80 byte)
-        2. Append zeros until length ≡ 56 mod 64 bytes
-        3. Append original message length as 64-bit big-endian integer
-    """
+    """Pad message according to SHA-256 standard specifications."""
     msg_len  = len(message)
     bit_len  = msg_len * 8
     message += b'\x80'
-    # Pad until length ≡ 56 mod 64
     while len(message) % 64 != 56:
         message += b'\x00'
     message += struct.pack('>Q', bit_len)
     return message
 
 def sha256(message: bytes) -> bytes:
-    """
-    Compute SHA-256 hash of message.
-    
-    Algorithm (64 rounds per 512-bit block):
-        1. Pad message
-        2. Split into 512-bit (64-byte) blocks
-        3. For each block:
-           a. Create message schedule W[0..63]
-           b. Initialize working variables a,b,c,d,e,f,g,h
-           c. 64 rounds of mixing using Ch, Maj, Sigma functions
-           d. Add compressed chunk to hash values
-        4. Produce final 256-bit (32-byte) digest
-    
-    Returns: 32 bytes
-    """
-    # Initialize hash values
+    """Compute SHA-256 hash value for input message."""
     h = list(_SHA256_H0)
-
-    # Pad and process each 64-byte block
     padded = _sha256_pad(message)
 
     for block_start in range(0, len(padded), 64):
         block = padded[block_start : block_start + 64]
-
-        # Create message schedule W[0..63]
-        W = list(struct.unpack('>16I', block))   # first 16 words from block
+        W = list(struct.unpack('>16I', block))
         for i in range(16, 64):
-            # σ0 = ROTR7(w[i-15]) XOR ROTR18(w[i-15]) XOR SHR3(w[i-15])
             s0 = _rotr32(W[i-15], 7) ^ _rotr32(W[i-15], 18) ^ (W[i-15] >> 3)
-            # σ1 = ROTR17(w[i-2]) XOR ROTR19(w[i-2]) XOR SHR10(w[i-2])
             s1 = _rotr32(W[i-2], 17) ^ _rotr32(W[i-2], 19)  ^ (W[i-2] >> 10)
             W.append((W[i-16] + s0 + W[i-7] + s1) & 0xFFFFFFFF)
 
-        # Initialize working variables
         a, b, c, d, e, f, g, hh = h
 
-        # 64 rounds
         for i in range(64):
-            # Σ1 = ROTR6(e) XOR ROTR11(e) XOR ROTR25(e)
             S1  = _rotr32(e, 6) ^ _rotr32(e, 11) ^ _rotr32(e, 25)
-            # Ch(e,f,g) = (e AND f) XOR (NOT e AND g)
             ch  = ((e & f) ^ (~e & g)) & 0xFFFFFFFF
-            # Σ0 = ROTR2(a) XOR ROTR13(a) XOR ROTR22(a)
             S0  = _rotr32(a, 2) ^ _rotr32(a, 13) ^ _rotr32(a, 22)
-            # Maj(a,b,c) = (a AND b) XOR (a AND c) XOR (b AND c)
             maj = (a & b) ^ (a & c) ^ (b & c)
 
             temp1 = (hh + S1 + ch  + _SHA256_K[i] + W[i]) & 0xFFFFFFFF
@@ -117,7 +71,6 @@ def sha256(message: bytes) -> bytes:
             b  = a
             a  = (temp1 + temp2) & 0xFFFFFFFF
 
-        # Add compressed chunk to current hash values
         h[0] = (h[0] + a)  & 0xFFFFFFFF
         h[1] = (h[1] + b)  & 0xFFFFFFFF
         h[2] = (h[2] + c)  & 0xFFFFFFFF
@@ -130,87 +83,34 @@ def sha256(message: bytes) -> bytes:
     return struct.pack('>8I', *h)
 
 
-# ══════════════════════════════════════════════════════════════════
-#  HMAC-SHA256 FROM SCRATCH
-# ══════════════════════════════════════════════════════════════════
-
 def hmac_sha256(key: bytes, message: bytes) -> bytes:
-    """
-    HMAC-SHA256: Keyed hash using SHA-256.
-
-    Algorithm:
-        if len(key) > 64: key = SHA256(key)
-        if len(key) < 64: key = key + zeros
-
-        ipad = 0x36 repeated 64 times
-        opad = 0x5C repeated 64 times
-
-        HMAC = SHA256((key XOR opad) || SHA256((key XOR ipad) || message))
-
-    Returns: 32 bytes
-    """
+    """Compute HMAC-SHA256 signature."""
     BLOCK_SIZE = 64
 
-    # Normalize key to block size
     if len(key) > BLOCK_SIZE:
         key = sha256(key)
     if len(key) < BLOCK_SIZE:
         key = key + b'\x00' * (BLOCK_SIZE - len(key))
 
-    # XOR key with ipad and opad
     ipad = bytes(k ^ 0x36 for k in key)
     opad = bytes(k ^ 0x5C for k in key)
 
-    # Inner hash: SHA256(ipad_key || message)
     inner = sha256(ipad + message)
-
-    # Outer hash: SHA256(opad_key || inner)
     return sha256(opad + inner)
 
 
-# ══════════════════════════════════════════════════════════════════
-#  PBKDF2-SHA256 FROM SCRATCH
-# ══════════════════════════════════════════════════════════════════
-
-def pbkdf2_sha256(password: str, salt: bytes,
-                  iterations: int = 100_000, dk_len: int = 32) -> bytes:
-    """
-    PBKDF2 with HMAC-SHA256 — Password-Based Key Derivation Function 2.
-
-    Converts a password string into a cryptographic key.
-
-    Why PBKDF2?
-        - Raw password → key is insecure (brute-forceable)
-        - PBKDF2 runs HMAC-SHA256 100,000 times → makes brute force slow
-        - Salt prevents rainbow table attacks (same password → different key)
-        - 100k iterations → attacker can try ~10 passwords/second max
-
-    Algorithm (RFC 2898):
-        For each block i needed to fill dk_len bytes:
-            U1 = HMAC(password, salt || INT(i))
-            U2 = HMAC(password, U1)
-            ...
-            Uc = HMAC(password, U_{c-1})
-            T_i = U1 XOR U2 XOR ... XOR Uc
-
-        DK = T_1 || T_2 || ... (truncated to dk_len bytes)
-
-    Returns: dk_len bytes of derived key material
-    """
+def pbkdf2_sha256(password: str, salt: bytes, iterations: int = 100_000, dk_len: int = 32) -> bytes:
+    """PBKDF2 key derivation using HMAC-SHA256."""
     password_bytes = password.encode('utf-8') if isinstance(password, str) else password
     dk             = b''
     block_index    = 1
 
     while len(dk) < dk_len:
-        # First iteration: U1 = HMAC(password, salt || block_index)
-        U = hmac_sha256(password_bytes,
-                        salt + struct.pack('>I', block_index))
+        U = hmac_sha256(password_bytes, salt + struct.pack('>I', block_index))
         T = U
 
-        # Remaining iterations: Ui = HMAC(password, U_{i-1})
         for _ in range(iterations - 1):
             U  = hmac_sha256(password_bytes, U)
-            # XOR each byte of U into T
             T  = bytes(a ^ b for a, b in zip(T, U))
 
         dk          += T
@@ -219,10 +119,7 @@ def pbkdf2_sha256(password: str, salt: bytes,
     return dk[:dk_len]
 
 
-# ══════════════════════════════════════════════════════════════════
-#  AES CONSTANTS
-# ══════════════════════════════════════════════════════════════════
-
+# AES SubBytes lookup tables
 SBOX = [
     0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
     0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
@@ -246,6 +143,7 @@ INV_SBOX = [0] * 256
 for _i, _v in enumerate(SBOX):
     INV_SBOX[_v] = _i
 
+# Round constant values
 RCON = [
     0x00,0x01,0x02,0x04,0x08,0x10,
     0x20,0x40,0x80,0x1b,0x36,
@@ -253,11 +151,8 @@ RCON = [
 ]
 
 
-# ══════════════════════════════════════════════════════════════════
-#  GF(2^8) ARITHMETIC
-# ══════════════════════════════════════════════════════════════════
-
 def _gf_mul(a: int, b: int) -> int:
+    """Galois Field multiplication."""
     result = 0
     while b:
         if b & 1:
@@ -269,36 +164,47 @@ def _gf_mul(a: int, b: int) -> int:
         b >>= 1
     return result
 
+
 def _xtime(a: int) -> int:
+    """xtime utility function."""
     result = a << 1
     if result & 0x100:
         result ^= 0x11b
     return result & 0xff
 
 
-# ══════════════════════════════════════════════════════════════════
-#  AES STATE OPERATIONS
-# ══════════════════════════════════════════════════════════════════
-
 def _bytes_to_state(block):
+    """Convert block of bytes to 4x4 state matrix."""
     return [[block[r + 4*c] for c in range(4)] for r in range(4)]
 
+
 def _state_to_bytes(state):
+    """Convert 4x4 state matrix back to bytes."""
     return bytes(state[r][c] for c in range(4) for r in range(4))
 
+
 def _sub_bytes(state):
+    """AES SubBytes transformation."""
     return [[SBOX[state[r][c]] for c in range(4)] for r in range(4)]
 
+
 def _inv_sub_bytes(state):
+    """AES InvSubBytes transformation."""
     return [[INV_SBOX[state[r][c]] for c in range(4)] for r in range(4)]
 
+
 def _shift_rows(state):
+    """AES ShiftRows transformation."""
     return [state[r][r:] + state[r][:r] for r in range(4)]
 
+
 def _inv_shift_rows(state):
+    """AES InvShiftRows transformation."""
     return [state[r][4-r:] + state[r][:4-r] for r in range(4)]
 
+
 def _mix_columns(state):
+    """AES MixColumns transformation."""
     new_state = [[0]*4 for _ in range(4)]
     for c in range(4):
         s0,s1,s2,s3 = state[0][c],state[1][c],state[2][c],state[3][c]
@@ -309,7 +215,9 @@ def _mix_columns(state):
         new_state[3][c] = s3^t^_xtime(s3^s0)
     return new_state
 
+
 def _inv_mix_columns(state):
+    """AES InvMixColumns transformation."""
     new_state = [[0]*4 for _ in range(4)]
     for c in range(4):
         s0,s1,s2,s3 = state[0][c],state[1][c],state[2][c],state[3][c]
@@ -319,15 +227,14 @@ def _inv_mix_columns(state):
         new_state[3][c] = _gf_mul(0x0b,s0)^_gf_mul(0x0d,s1)^_gf_mul(0x09,s2)^_gf_mul(0x0e,s3)
     return new_state
 
+
 def _add_round_key(state, rk):
+    """AES AddRoundKey transformation."""
     return [[state[r][c]^rk[r][c] for c in range(4)] for r in range(4)]
 
 
-# ══════════════════════════════════════════════════════════════════
-#  AES KEY SCHEDULE
-# ══════════════════════════════════════════════════════════════════
-
 def _key_schedule(key: bytes) -> list:
+    """Generate round keys for AES-256."""
     assert len(key) == 32
     Nk,Nr,Nb = 8,14,4
     W = [list(key[4*i:4*i+4]) for i in range(Nk)]
@@ -350,11 +257,8 @@ def _key_schedule(key: bytes) -> list:
     return round_keys
 
 
-# ══════════════════════════════════════════════════════════════════
-#  AES-256 BLOCK ENCRYPT / DECRYPT
-# ══════════════════════════════════════════════════════════════════
-
 def _aes_encrypt_block(block: bytes, round_keys: list) -> bytes:
+    """Encrypt a single 16-byte block."""
     state = _bytes_to_state(block)
     state = _add_round_key(state, round_keys[0])
     for rnd in range(1, 14):
@@ -367,7 +271,9 @@ def _aes_encrypt_block(block: bytes, round_keys: list) -> bytes:
     state = _add_round_key(state, round_keys[14])
     return _state_to_bytes(state)
 
+
 def _aes_decrypt_block(block: bytes, round_keys: list) -> bytes:
+    """Decrypt a single 16-byte block."""
     state = _bytes_to_state(block)
     state = _add_round_key(state, round_keys[14])
     state = _inv_shift_rows(state)
@@ -381,81 +287,54 @@ def _aes_decrypt_block(block: bytes, round_keys: list) -> bytes:
     return _state_to_bytes(state)
 
 
-# ══════════════════════════════════════════════════════════════════
-#  PUBLIC API
-# ══════════════════════════════════════════════════════════════════
-
 SALT_SIZE  = 16
 NONCE_SIZE = 16
-ITERATIONS = 1_000   # reduced for demo speed (pure Python PBKDF2)
-                     # production value = 100,000
+ITERATIONS = 1_000   # PBKDF2 iterations for fast demo processing
+
 
 def encrypt(plaintext: bytes, password: str) -> bytes:
-    """
-    Encrypt using AES-256-GCM.
-    Key derived via our custom PBKDF2-SHA256 (100k iterations).
-    GCM mode (CTR+GHASH) uses pycryptodome wrapper.
-
-    Output: salt(16) + nonce(16) + tag(16) + ciphertext
-    """
+    """Encrypt data using AES-256-GCM."""
     salt = os.urandom(SALT_SIZE)
-
-    # Our custom PBKDF2-SHA256
     key  = pbkdf2_sha256(password, salt, ITERATIONS, dk_len=32)
 
-    # GCM mode — pycryptodome wrapper
-    cipher          = _AES_GCM.new(key, _AES_GCM.MODE_GCM,
-                                    nonce=os.urandom(NONCE_SIZE))
+    cipher          = _AES_GCM.new(key, _AES_GCM.MODE_GCM, nonce=os.urandom(NONCE_SIZE))
     ciphertext, tag = cipher.encrypt_and_digest(plaintext)
 
     return salt + cipher.nonce + tag + ciphertext
 
 
 def decrypt(bundle: bytes, password: str) -> bytes:
-    """
-    Decrypt AES-256-GCM bundle.
-    Wrong password → authentication tag mismatch → ValueError immediately.
-    """
+    """Decrypt GCM encrypted data bundle."""
     salt       = bundle[:16]
     nonce      = bundle[16:32]
     tag        = bundle[32:48]
     ciphertext = bundle[48:]
 
-    # Our custom PBKDF2-SHA256
     key = pbkdf2_sha256(password, salt, ITERATIONS, dk_len=32)
-
     cipher = _AES_GCM.new(key, _AES_GCM.MODE_GCM, nonce=nonce)
+
     try:
         return cipher.decrypt_and_verify(ciphertext, tag)
     except ValueError:
         raise ValueError("Wrong password or corrupted data — authentication failed.")
 
 
-# ══════════════════════════════════════════════════════════════════
-#  SELF TESTS
-# ══════════════════════════════════════════════════════════════════
-
 def run_self_test():
+    """Run cryptographic sanity checks."""
     print("=" * 55)
     print("  StegoWave Crypto Self Tests")
     print("=" * 55)
 
-    # SHA-256 test vector — verified against Python hashlib
     result   = sha256(b'abc').hex()
     expected = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
     sha_pass = result == expected
     print(f"  SHA-256 : {'PASS' if sha_pass else 'FAIL'}")
-    if not sha_pass:
-        print(f"    Expected: {expected}")
-        print(f"    Got     : {result}")
 
-    # HMAC-SHA256 test (RFC 4231 Test Case 1)
     hmac_result = hmac_sha256(b'\x0b'*20, b'Hi There').hex()
     hmac_expect = 'b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7'
     hmac_pass   = hmac_result == hmac_expect
     print(f"  HMAC    : {'PASS' if hmac_pass else 'FAIL'}")
 
-    # AES-256 test (FIPS 197)
     key   = bytes.fromhex('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f')
     plain = bytes.fromhex('00112233445566778899aabbccddeeff')
     rk    = _key_schedule(key)
@@ -465,7 +344,6 @@ def run_self_test():
     print(f"  AES-256 encrypt: {'PASS' if aes_pass else 'FAIL'}")
     print(f"  AES-256 decrypt: {'PASS' if dec_pass else 'FAIL'}")
 
-    # Full encrypt/decrypt roundtrip (uses 1000 iterations for speed)
     ct = encrypt(b'Hello StegoWave!', 'testpassword')
     pt = decrypt(ct, 'testpassword')
     rt_pass = pt == b'Hello StegoWave!'
