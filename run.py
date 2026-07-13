@@ -43,7 +43,7 @@ if __name__ == '__main__':
         print("  pip install -r requirements.txt")
         sys.exit(1)
 
-    print("\n📡 Starting API server on http://localhost:5000")
+    print("\n📡 Starting API server on http://localhost:8085")
     print("🌐 Open frontend/index.html in your browser")
     print("   (Or use Live Server in VS Code)\n")
     print("-" * 55)

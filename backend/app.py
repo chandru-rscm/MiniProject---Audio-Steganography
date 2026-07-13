@@ -7,6 +7,20 @@ import io
 import zlib
 import base64
 import traceback
+import importlib.util
+import sys
+
+# Temporarily remove local directory from sys.path so Python 3.14 loads stdlib packages cleanly
+_curr = sys.path.pop(0)
+import bz2, gzip, zipfile, shutil, tempfile, torch
+sys.path.insert(0, _curr)
+
+# Explicitly load local compression.py module to avoid Python 3.14 stdlib name collision
+_comp_spec = importlib.util.spec_from_file_location('compression', os.path.join(os.path.dirname(__file__), 'compression.py'))
+_comp_mod = importlib.util.module_from_spec(_comp_spec)
+sys.modules['compression'] = _comp_mod
+_comp_spec.loader.exec_module(_comp_mod)
+
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 
@@ -300,6 +314,6 @@ def preview_compressed():
 if __name__ == '__main__':
     print("=" * 60)
     print("  Audio Steganography Server")
-    print("  Running on http://localhost:5000")
+    print("  Running on http://localhost:8085")
     print("=" * 60)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=8085)

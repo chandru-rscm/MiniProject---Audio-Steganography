@@ -36,3 +36,5 @@ backend/generate_panel_dataset.py
 
 # Academic report templates and directories
 report/
+# Runtime server logs
+*.log
